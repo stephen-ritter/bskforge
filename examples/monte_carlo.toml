@@ -1,0 +1,43 @@
+# Dispersed initial state campaign over one deterministic scenario.
+#
+# `bskforge run monte_carlo.toml` flies the nominal case; the
+# `[monte_carlo]` block below is what `bskforge mc monte_carlo.toml`
+# consumes: three runs with the semi-major axis dispersed normally
+# about 7200 km (1 sigma = 50 km), eccentricity uniformly in
+# [0, 0.01], a uniformly random initial attitude, and a hub mass
+# between 95 and 105 kg.
+
+[simulation]
+name = "monte-carlo"
+duration = 180.0
+
+[[spacecraft]]
+name = "sc1"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.2e6
+e = 0.001
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.05, -0.05, 0.02]
+
+[monte_carlo]
+runs = 3
+
+[[monte_carlo.dispersions]]
+spacecraft = "sc1"
+quantity = "orbit_elements"
+[monte_carlo.dispersions.elements]
+a = ["normal", 7.2e6, 5.0e4]
+e = ["uniform", 0.0, 0.01]
+
+[[monte_carlo.dispersions]]
+spacecraft = "sc1"
+quantity = "sigma_BN"
+
+[[monte_carlo.dispersions]]
+spacecraft = "sc1"
+quantity = "mass"
+range = [95.0, 105.0]

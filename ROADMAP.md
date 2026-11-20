@@ -12,8 +12,9 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-Phase 6 — fleets & operations: comm links ✅ and formation flying ✅
-(committed below); Monte Carlo dispersions in flight.
+_(nothing in flight — Phase 6 complete, see below; Phase 7 — polish &
+docs: generated TOML reference, example library sweep, UX pass — is
+next)_
 
 ---
 
@@ -50,14 +51,15 @@ Phase 6 — fleets & operations: comm links ✅ and formation flying ✅
       `locationPointing`, `celestialTwoBodyPoint`
 - [x] Control: `mrpPD`, `rateServoFullNonlinear`, `mrpSteering`
 
-### Phase 6 — Fleets & operations  🔧
+### Phase 6 — Fleets & operations  ✅ (see Completed)
 - [x] Comm links (`simpleAntenna`, `linkBudget`)
 - [x] Formation FSW modules and formation flying wiring
       (`formationBarycenter`, `hillStateConverter`)
-- [ ] Monte Carlo (`MonteCarlo.Controller`) + dispersions from TOML
-- [ ] Hook-based event effects beyond `[custom.events]` (already available:
-      time-conditioned events + `pkg.module:function` hooks)
-- [ ] MuJoCo scenes (stretch)
+- [x] Monte Carlo (`MonteCarlo.Controller`) + dispersions from TOML
+- [x] Hook-based event effects — shipped with `[custom.events]`
+      (time-conditioned events + `pkg.module:function` hooks, Phase 3)
+
+_(MuJoCo scenes stays a stretch goal; parked with Phase 7)_
 
 ### Phase 7 — Polish & docs
 - [ ] Generated TOML reference from the pydantic JSON schema
@@ -67,6 +69,29 @@ Phase 6 — fleets & operations: comm links ✅ and formation flying ✅
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 6c: Monte Carlo campaigns from TOML
+Validated end-to-end against installed **Basilisk 2.12.2** (new example
+`examples/monte_carlo.toml` + 5 new tests, 92 total passing).
+- [x] `[monte_carlo]` schema: `runs`, `threads`, `archive_dir` and a
+      discriminated `dispersions` list over
+      `orbit_elements` / `sigma_BN` / `omega_BN_B` / `mass`.
+- [x] `bskforge.montecarlo.run_monte_carlo` drives Basilisk's
+      `MonteCarlo.Controller`: creation/execution/retention hooks are
+      module-level (picklable for the worker pool); hub attribute paths
+      (`TaskList[i].TaskModels[j].hub.*`) are resolved from a nominal
+      build by `ModelTag`.
+- [x] `OrbitalElementDispersion` *redefines* the whole orbit in BSK —
+      un-dispersed elements ride through as zero-width uniforms of the
+      nominal rv2elem state, and `raan` is accepted for `Omega`.
+- [x] Retention: per-run final classical elements + attitude through a
+      retention function reading the standard `{sc}.state` recorder;
+      results summarized into one row per run. Run ``k`` reseeds the
+      RNG with ``10k`` and module seeds are dispersed, so campaigns are
+      reproducible (verified: reruns match; threads=2 matches threads=1).
+- [x] `bskforge mc <toml> [--runs N] [--output-dir D]` prints the
+      per-run summary; `bskforge run` ignores `[monte_carlo]` and flies
+      the nominal case.
 
 ### 2026-11-20 — Phase 6a/6b: RF comm links and formation flying
 Validated end-to-end against installed **Basilisk 2.12.2** (new examples

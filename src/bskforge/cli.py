@@ -56,6 +56,20 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_mc(args: argparse.Namespace) -> int:
+    from bskforge.loader import load_scenario
+    from bskforge.montecarlo import run_monte_carlo
+
+    config = load_scenario(args.scenario)
+    result = run_monte_carlo(config, runs=args.runs, archive_dir=args.output_dir)
+    print(
+        f"monte carlo: {result.runs} runs -> {result.archive_dir}"
+        + (f" | failed: {result.failures}" if result.failures else "")
+    )
+    print(result.summary.to_string(index=False))
+    return 1 if result.failures else 0
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     from bskforge.loader import load_scenario
 
@@ -110,6 +124,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="override [logging].directory",
     )
     run.set_defaults(handler=_cmd_run)
+
+    mc = sub.add_parser(
+        "mc",
+        help="run the scenario's [monte_carlo] campaign",
+    )
+    mc.add_argument("scenario", type=Path)
+    mc.add_argument(
+        "--runs",
+        type=int,
+        default=None,
+        help="override [monte_carlo].runs",
+    )
+    mc.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="per-run archive directory override",
+    )
+    mc.set_defaults(handler=_cmd_mc)
 
     validate = sub.add_parser("validate", help="validate without Basilisk")
     validate.add_argument("scenario", type=Path)

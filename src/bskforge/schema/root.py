@@ -18,6 +18,7 @@ from bskforge.schema.custom import CustomSection
 from bskforge.schema.environment import EnvironmentSection
 from bskforge.schema.formation import FormationConfig
 from bskforge.schema.logging import LoggingSection
+from bskforge.schema.monte_carlo import MonteCarloSection
 from bskforge.schema.simulation import SimulationSection
 from bskforge.schema.spacecraft import SpacecraftSection
 from bskforge.schema.visualization import VisualizationSection
@@ -42,7 +43,7 @@ class ScenarioConfig(ScenarioModel):
     logging: LoggingSection = Field(default_factory=LoggingSection)
     visualization: VisualizationSection = Field(default_factory=VisualizationSection)
     custom: CustomSection = Field(default_factory=CustomSection)
-    monte_carlo: dict | None = None
+    monte_carlo: MonteCarloSection | None = None
 
     #: scenario file the document was loaded from (``None`` for dicts)
     _source_path: str | None = PrivateAttr(default=None)
@@ -132,11 +133,13 @@ class ScenarioConfig(ScenarioModel):
                     f"comm link {link.name!r}: a ground station rides a "
                     "rotating planet; add a [world.spice] section"
                 )
-        if self.monte_carlo:
-            raise ValueError(
-                "monte_carlo requires Phase 6; remove [monte_carlo] to run "
-                "the deterministic scenario"
-            )
+        if self.monte_carlo is not None:
+            for disp in self.monte_carlo.dispersions:
+                if disp.spacecraft not in names:
+                    raise ValueError(
+                        f"monte_carlo dispersion on {disp.spacecraft!r}: "
+                        "not a [[spacecraft]] name"
+                    )
         return self
 
     def primary_vehicle(self) -> SpacecraftSection:

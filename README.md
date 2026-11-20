@@ -11,6 +11,7 @@ launches the corresponding Basilisk simulation graph.
 ```bash
 pip install "bskforge[dev]"        # or: pip install -e ".[dev]"
 bskforge run examples/single_sat_leo.toml
+bskforge mc examples/monte_carlo.toml    # [monte_carlo] dispersion campaign
 bskforge validate scenario.toml
 bskforge schema                    # dump the JSON schema of the scenario format
 bskforge graph scenario.toml       # emit the Basilisk message-connection graph
@@ -76,7 +77,7 @@ Every Basilisk object created by the domain builders also accepts a free-form
 module at build time (with did-you-mean errors), so new upstream parameters
 need no bskforge changes.
 
-## Status (Phases 1–5: core + environment + sensors/estimation + effectors + FSW breadth)
+## Status (Phases 1–6: core + environment + sensors/estimation + effectors + FSW + fleets)
 
 Implemented: TOML loading with `extends` inheritance and friendly errors,
 SPICE-driven worlds (presets, custom point masses, spherical harmonics,
@@ -95,12 +96,11 @@ reaction-wheel momentum management (`thrMomentumDumping`,
 multi-spacecraft scenarios, RF comm links (spacecraft/ground antennas
 with a full `linkBudget` chain) and formation flying (mass-weighted
 barycenter plus Hill-frame relative states), message recorders with
-CSV/parquet/npz export, Vizard visualization hooks, and the `[custom]`
-escape hatch.
+CSV/parquet/npz export, Vizard visualization hooks, Monte Carlo
+dispersion campaigns (`bskforge mc`), and the `[custom]` escape hatch.
 
-Pending: Monte Carlo dispersions (Phase 6). Configuring any pending
-block fails with a clear phase pointer instead of silently ignoring
-it.
+Pending: Phase 7 polish. Configuring any pending block fails with a
+clear phase pointer instead of silently ignoring it.
 
 Known Basilisk behavior: recorder samples taken at `t = 0` capture messages
 before their writer modules first execute (Basilisk logs them as

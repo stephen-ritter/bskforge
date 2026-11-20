@@ -17,6 +17,7 @@ import pytest
 
 from bskforge.errors import BuildError, ConfigError, UnsupportedError
 from bskforge.loader import load_scenario, validate_scenario
+from bskforge.montecarlo import run_monte_carlo
 from bskforge.runner import ScenarioRunner
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -252,6 +253,10 @@ class TestRun:
             (
                 "comm_links.toml",
                 {"down.link", "down.access", "xlink.link", "relay.state"},
+            ),
+            (
+                "monte_carlo.toml",
+                {"sc1.state"},
             ),
             (
                 "formation_flying.toml",
@@ -1489,4 +1494,77 @@ class TestFormationFlying:
                         "relative_to": "stranger",
                     },
                 )
+            )
+
+
+# -- Phase 6: Monte Carlo ----------------------------------------------------
+
+
+class TestMonteCarlo:
+    """Dispersion campaigns through Basilisk's MonteCarlo.Controller."""
+
+    def _campaign_config(self, tmp_path, runs: int = 3) -> dict:
+        return {
+            "simulation": {"name": "mc-test", "duration": 60.0},
+            "spacecraft": [
+                {
+                    "name": "sc1",
+                    "orbit": {
+                        "type": "elements",
+                        "elements": {"a": 7200e3, "e": 0.001},
+                    },
+                    "attitude": {"initial": {"sigma_BN": [0.05, -0.05, 0.02]}},
+                }
+            ],
+            "monte_carlo": {
+                "runs": runs,
+                "archive_dir": str(tmp_path / f"camp{runs}"),
+                "dispersions": [
+                    {
+                        "spacecraft": "sc1",
+                        "quantity": "orbit_elements",
+                        "elements": {"a": ["normal", 7200e3, 50e3]},
+                    },
+                    {"spacecraft": "sc1", "quantity": "sigma_BN"},
+                    {"spacecraft": "sc1", "quantity": "mass", "range": [95.0, 105.0]},
+                ],
+            },
+        }
+
+    def test_campaign_variates_the_state(self, tmp_path):
+        config = validate_scenario(self._campaign_config(tmp_path))
+        result = run_monte_carlo(config)
+        assert result.failures == []
+        assert len(result.summary) == 3
+        a = result.summary["sc1.a"].to_numpy()
+        # three runs, three different orbits, all within 3 sigma of nominal
+        assert len(set(a)) == 3
+        assert np.all(np.abs(a - 7200e3) < 2e5)
+        sigma = result.summary["sc1.sigma_final"].to_numpy()
+        assert len(set(np.round(sigma, 9))) == 3
+        assert (tmp_path / "camp3").exists()
+
+    def test_campaign_is_repeatable(self, tmp_path):
+        result_a = run_monte_carlo(validate_scenario(self._campaign_config(tmp_path)))
+        cfg2 = self._campaign_config(tmp_path)
+        cfg2["monte_carlo"]["archive_dir"] = str(tmp_path / "again")
+        result_b = run_monte_carlo(validate_scenario(cfg2))
+        assert np.allclose(
+            result_a.summary["sc1.a"].to_numpy(),
+            result_b.summary["sc1.a"].to_numpy(),
+        )
+
+    def test_monte_carlo_rejects_unknown_spacecraft(self):
+        with pytest.raises(ConfigError, match="not a"):
+            validate_scenario(
+                {
+                    "simulation": {"name": "mc", "duration": 10.0},
+                    "spacecraft": [{"name": "sc1"}],
+                    "monte_carlo": {
+                        "runs": 2,
+                        "dispersions": [
+                            {"spacecraft": "ghost", "quantity": "sigma_BN"}
+                        ],
+                    },
+                }
             )
