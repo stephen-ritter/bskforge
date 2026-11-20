@@ -150,6 +150,44 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 Definition of done for anything tracked in `ROADMAP.md`: tests pass,
 `ruff check`/`ruff format` clean, `ty check` clean.
 
+## Upgrading Basilisk
+
+bskforge is built so that most upstream changes need no bskforge code:
+
+1. **New parameters on existing modules are free.** Every domain object
+   accepts a `params = { ... }` table validated at build time against the
+   *installed* Basilisk module by introspection, so new upstream knobs
+   work from TOML immediately (with did-you-mean errors for typos).
+2. **New modules are free via `[custom]`.** Any class reachable by import
+   path can be added as a `[custom.modules]` entry with
+   `[custom.connections]` wiring — a new Basilisk feature is usable from
+   day one. It becomes a first-class TOML section (schema class +
+   builder + tests + example) only when deliberately promoted.
+3. **Removed/renamed modules and changed messages are the only tier that
+   forces work** — the flow below catches them.
+
+Workflow for a Basilisk version bump:
+
+1. Install the new wheel in the project venv and update the version pin
+   in `pyproject.toml`.
+2. Run the full sweep: `.venv/bin/pytest`. The tests build and fly real
+   Basilisk graphs — including the example matrix — so removals fail at
+   build (`ImportError`/`BuildError`), message-payload changes fail as
+   missing recorder columns (`KeyError` in export/tests), and behavioral
+   drift fails the physics asserts (attitude convergence, Hill
+   separations, momentum budgets) — not just "did it run".
+3. Triage each failure to its builder in `src/bskforge/build/*.py`
+   (`BSK_ERROR` and `BuildError` messages name the module). Change the
+   pydantic schema only if the *TOML format* itself must move: bump the
+   schema version and note the migration in this README.
+4. Regenerate the docs — `bskforge reference > REFERENCE.md` — since the
+   field reference and `bskforge schema` are derived from the schema,
+   they re-derive automatically after the fix.
+5. Re-run the definition-of-done gates and record the result in
+   `ROADMAP.md`: completed entries are annotated *validated against
+   Basilisk X.Y*, so an upgrade adds a new dated validation line rather
+   than rewriting history.
+
 ## License
 
 ISC — Autonomous Vehicle Systems Lab, University of Colorado Boulder.

@@ -69,6 +69,15 @@ _(MuJoCo scenes stays a stretch goal; parked with Phase 7)_
 
 ## Completed
 
+### 2026-11-20 — Documentation: Basilisk-upgrade playbook
+Added an "Upgrading Basilisk" section to `README.md`: the three uptake
+tiers for upstream changes (free `params` passthrough, free `[custom]`
+access to new modules, forced work only on removals/message changes)
+and the version-bump workflow — swap the wheel, run the example-matrix
+sweep as the breaking-change detector, triage to `build/*.py`,
+regenerate `REFERENCE.md`, and record a new *validated against
+Basilisk* line here. Current validation baseline: **Basilisk 2.12.2**.
+
 ### 2026-11-20 — Phase 7: generated reference, example sweep, CLI UX
 Validated against installed **Basilisk 2.12.2** (new examples
 `examples/ground_pointing.toml`, `examples/relay_chain.toml`; 11 new
