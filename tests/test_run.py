@@ -1598,3 +1598,38 @@ class TestMonteCarlo:
                     },
                 }
             )
+
+
+# -- visualization wiring ----------------------------------------------------
+
+
+class TestVisualization:
+    """[visualization] attaches vizInterface without breaking the build."""
+
+    def test_viz_with_reaction_wheels_builds(self):
+        config = validate_scenario(
+            {
+                "simulation": {"name": "viz", "duration": 10.0},
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "effectors": [
+                            {
+                                "type": "reactionWheels",
+                                "inertia": 0.001,
+                                "wheels": [{"direction_B": [1.0, 0.0, 0.0]}],
+                            }
+                        ],
+                    }
+                ],
+                "visualization": {"enabled": True, "live_stream": True},
+            }
+        )
+        built = ScenarioRunner(config).build()
+        models = [m for t in built.context.sim.TaskList for m in t.TaskModels]
+        assert any(type(m).__name__ == "VizInterface" for m in models), (
+            "vizInterface module not attached"
+        )
+        assert any(type(m).__name__ == "ClockSynch" for m in models), (
+            "live stream missing clock sync"
+        )

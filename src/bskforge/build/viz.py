@@ -54,8 +54,10 @@ def build_viz(ctx: SimContext) -> None:
         ctx.sim,
         DYN_TASK,
         [bundle.sc for bundle in bundles],
+        # one entry per spacecraft: the RW effector module (or None);
+        # vizSupport reads ``rwEffectorList[c].rwOutMsgs`` directly
         rwEffectorList=[
-            [bundle.rw.effector] if bundle.rw is not None else [] for bundle in bundles
+            bundle.rw.effector if bundle.rw is not None else None for bundle in bundles
         ],
         modelDictionaryKeyList=[
             bundle.config.viz.model_key or "" for bundle in bundles
