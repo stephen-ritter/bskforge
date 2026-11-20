@@ -1,0 +1,205 @@
+# Momentum management: two wheel-loaded vehicles desaturate their reaction
+# wheels — one by firing thruster pulses (thrMomentumDumping), one through
+# magnetic torque bars against the dipole field (mtbMomentumManagementSimple).
+#
+# Attitude control itself stays on the wheels (rwMotorTorque); the dumping
+# chains only touch the thruster / MTB command paths. With an
+# rwMotorTorque allocation the commanded torque is applied exclusively
+# through the wheels, so recorded wheel speeds are the true actuator state.
+
+[simulation]
+name = "Momentum management"
+duration = 900.0
+
+[simulation.dt]
+dynamics = 0.2
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[environment.magnetic_field]
+type = "centered_dipole"
+
+# -- vehicle 1: thruster momentum dumping ---------------------------------
+[[spacecraft]]
+name = "thrusterSat"
+
+[spacecraft.hub]
+mass = 750.0
+
+[spacecraft.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.05, -0.05, 0.02]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+initial_speed = 3000.0          # rpm: deliberately loaded wheels
+max_torque = 1.0
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+initial_speed = -2500.0
+max_torque = 1.0
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+initial_speed = 2000.0
+max_torque = 1.0
+
+# cross-X reaction-control set, 5 N class thrusters
+[[spacecraft.effectors]]
+type = "thrusters"
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [1.0, 0.0, 0.0]
+position_B = [0.5, 0.5, 0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [-1.0, 0.0, 0.0]
+position_B = [0.5, -0.5, 0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [0.0, 1.0, 0.0]
+position_B = [0.5, 0.5, -0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [0.0, -1.0, 0.0]
+position_B = [0.5, -0.5, -0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [-1.0, 0.0, 0.0]
+position_B = [-0.5, 0.5, 0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [1.0, 0.0, 0.0]
+position_B = [-0.5, -0.5, 0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [0.0, -1.0, 0.0]
+position_B = [-0.5, 0.5, -0.3]
+max_thrust = 5.0
+
+[[spacecraft.effectors.thrusters]]
+direction_B = [0.0, 1.0, 0.0]
+position_B = [-0.5, -0.5, -0.3]
+max_thrust = 5.0
+
+[spacecraft.fsw.estimator]
+type = "simpleNav"
+
+[spacecraft.fsw.guidance]
+type = "inertial3D"
+sigma_R0N = [0.0, 0.0, 0.0]
+
+[spacecraft.fsw.control]
+type = "mrpFeedback"
+k = 3.5
+p = 30.0
+ki = -1.0
+
+[spacecraft.fsw.allocation]
+type = "rwMotorTorque"
+
+[spacecraft.fsw.momentum_management]
+type = "thrMomentumDumping"
+hs_min = 10.0                   # N*m*s of wheel momentum to keep
+max_counter_value = 20          # FSW periods between firings
+rearm_period = 10.0             # s between dump re-evaluations
+
+# -- vehicle 2: magnetic desaturation --------------------------------------
+[[spacecraft]]
+name = "mtbSat"
+
+[spacecraft.hub]
+mass = 100.0
+
+[spacecraft.hub.inertia]
+ixx = 100.0
+iyy = 90.0
+izz = 80.0
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 6.871e6
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.02, -0.02, 0.01]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.002
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+initial_speed = 3000.0
+max_torque = 0.01
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+initial_speed = 2500.0
+max_torque = 0.01
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+initial_speed = -2000.0
+max_torque = 0.01
+
+[[spacecraft.effectors]]
+type = "mtb"
+
+[[spacecraft.effectors.bars]]
+direction_B = [0.577, 0.577, 0.577]
+max_dipole = 50.0
+
+[[spacecraft.effectors.bars]]
+direction_B = [-0.577, 0.577, -0.577]
+max_dipole = 50.0
+
+[[spacecraft.effectors.bars]]
+direction_B = [-0.577, -0.577, 0.577]
+max_dipole = 50.0
+
+[[spacecraft.effectors.bars]]
+direction_B = [0.577, -0.577, -0.577]
+max_dipole = 50.0
+
+[spacecraft.fsw.estimator]
+type = "simpleNav"
+
+[spacecraft.fsw.guidance]
+type = "inertial3D"
+sigma_R0N = [0.0, 0.0, 0.0]
+
+[spacecraft.fsw.control]
+type = "mrpFeedback"
+k = 3.5
+p = 30.0
+ki = -1.0
+
+[spacecraft.fsw.allocation]
+type = "rwMotorTorque"
+
+[spacecraft.fsw.momentum_management]
+type = "mtbMomentumManagementSimple"
+kp = 0.003

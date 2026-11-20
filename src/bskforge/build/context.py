@@ -45,6 +45,25 @@ class RwBundle:
 
 
 @dataclass
+class ThrusterBundle:
+    """Thruster effector handles needed by later phases."""
+
+    effector: Any
+    factory: Any
+    cfg_msg: Any
+    cmd_src_msg: Any = None  # message driving ``effector.cmdsInMsg``
+
+
+@dataclass
+class MtbBundle:
+    """Magnetic torque-bar effector handles needed by later phases."""
+
+    effector: Any
+    params_msg: Any
+    cmd_src_msg: Any = None  # message driving ``effector.mtbCmdInMsg``
+
+
+@dataclass
 class SpacecraftBundle:
     """Per-vehicle state assembled across builder phases."""
 
@@ -53,6 +72,8 @@ class SpacecraftBundle:
     ext_ft: Any
     veh_config_msg: Any
     rw: RwBundle | None = None
+    thruster: ThrusterBundle | None = None
+    mtb: MtbBundle | None = None
     resolved_env: Any = None
     fsw: dict[str, Any] = field(default_factory=dict)
     sensor_msgs: dict[str, tuple[Any, Any]] = field(default_factory=dict)

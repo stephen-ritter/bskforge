@@ -47,15 +47,29 @@ class ScenarioConfig(ScenarioModel):
             dupes = sorted({n for n in names if names.count(n) > 1})
             raise ValueError(f"duplicate spacecraft names: {', '.join(dupes)}")
         for sc in self.spacecraft:
-            if (
-                sc.fsw is not None
-                and sc.fsw.allocation is not None
-                and sc.reaction_wheels() is None
-            ):
-                raise ValueError(
-                    f"spacecraft {sc.name!r} declares an fsw allocation "
-                    "but has no reactionWheels effector to allocate to"
+            if sc.fsw is not None and sc.fsw.allocation is not None:
+                effector_type = {
+                    "rwMotorTorque": "reactionWheels",
+                    "thrusterTorque": "thrusters",
+                    "dipoleMapping": "mtb",
+                }[sc.fsw.allocation.type]
+                if not sc.has_effector(effector_type):
+                    raise ValueError(
+                        f"spacecraft {sc.name!r} declares an fsw allocation "
+                        f"but has no {effector_type} effector to allocate to"
+                    )
+            if sc.fsw is not None and sc.fsw.momentum_management is not None:
+                kind = sc.fsw.momentum_management.type
+                needed = (
+                    ("reactionWheels", "thrusters")
+                    if kind == "thrMomentumDumping"
+                    else ("reactionWheels", "mtb")
                 )
+                if not all(sc.has_effector(name) for name in needed):
+                    raise ValueError(
+                        f"spacecraft {sc.name!r}: {kind} requires "
+                        f"{' and '.join(needed)} effectors"
+                    )
         if self.monte_carlo:
             raise ValueError(
                 "monte_carlo requires Phase 6; remove [monte_carlo] to run "

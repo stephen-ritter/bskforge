@@ -17,7 +17,6 @@ from bskforge.build.context import SimContext
 from bskforge.build.disturbances import build_disturbances
 from bskforge.build.effectors import EFFECTOR_BUILDERS
 from bskforge.build.fsw import build_fsw
-from bskforge.build.registry import unsupported
 from bskforge.build.sensors import SENSOR_BUILDERS, build_css_constellations
 from bskforge.build.spacecraft import build_vehicle
 from bskforge.build.world import build_world
@@ -89,8 +88,5 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
 
     return BuiltScenario(context=ctx)
 
-
-# Registry completeness: types present in the schema but deferred phases.
-EFFECTOR_BUILDERS.setdefault("thrusters", unsupported("Thruster effectors", "Phase 4"))
 
 __all__ = ["BuiltScenario", "build_scenario"]

@@ -12,7 +12,10 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-_(nothing in flight — Phase 3 complete, see below)_
+_(nothing in flight — Phase 4 complete, see below; Phase 5 — FSW breadth:
+guidance set (`velocityPoint`, `hillPoint`, `sunSafePoint`,
+`waypointReference`, `locationPointing`, `celestialTwoBodyPoint`), extra
+controllers, formation FSW, opnav stack — is next)_
 
 ---
 
@@ -36,12 +39,13 @@ _(nothing in flight — Phase 3 complete, see below)_
 
 ### Phase 3 — Sensors & estimation  ✅ (see Completed)
 
-### Phase 4 — Effector breadth
-- [ ] Thrusters (`simIncludeThruster`) + `thrForceMapping`, firing (Schmitt/Round),
+### Phase 4 — Effector breadth  ✅ (see Completed)
+- [x] Thrusters (`simIncludeThruster`) + `thrForceMapping`, firing (Schmitt/Round),
       `thrMomentumDumping`
-- [ ] MTB + momentum management (`mtbMomentumManagement*`, `dipoleMapping`)
-- [ ] RW null-space, desaturation (`rwNullSpace`, `thrustRWDesat`)
-- [ ] VSCMG (stretch)
+- [x] MTB + momentum management (`mtbMomentumManagementSimple`, `dipoleMapping`)
+- [x] RW null-space desaturation (`rwNullSpace`); `thrustRWDesat` is superseded
+      by `thrMomentumDumping` upstream and stays `[custom]`-only
+- [ ] VSCMG (stretch; `thrusterStateEffector` + CMG effector via `[custom]`)
 
 ### Phase 5 — FSW breadth
 - [ ] Guidance set: `velocityPoint`, `hillPoint`, `sunSafePoint`, `waypointReference`,
@@ -65,6 +69,54 @@ _(nothing in flight — Phase 3 complete, see below)_
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 4: thrusters, torque bars, momentum management
+Validated end-to-end against installed **Basilisk 2.12.2** (new example
+`examples/momentum_management.toml` + 10 new tests, 61 total passing).
+- [x] Thruster sets (`[[spacecraft.effectors]] type = "thrusters"`):
+      per-device `direction_B` / `position_B` / `max_thrust` / `divergence`
+      through `simIncludeThruster.thrusterFactory` +
+      `thrusterDynamicEffector` (force **and** torque on the hub; the
+      factory's `create()` kwargs pass through).
+- [x] `thrusterTorque` allocation: `thrForceMapping` (validated geometry —
+      `thrForceSign = +1`, body-axis `controlAxes_B`) feeding the firing
+      logic, `thrFiringSchmitt` (default) or `thrFiringRound`, whose
+      on-times actuate the effector through `THRArrayOnTimeCmdMsg`.
+      Pure-RCS attitude control converges with real pulses.
+- [x] MTB sets (`type = "mtb"`): `MtbEffector` + component-major
+      `MTBArrayConfigMsg` (2.9.2+ axis-major `GtMatrix_B` layout); the
+      effector subscribes itself to the `[environment.magnetic_field]`
+      message and the build fails with a clear `BuildError` when none is
+      configured (an MTB set in vacuum is torque-free).
+- [x] `dipoleMapping` allocation: `torque2Dipole` + `dipoleMapping`
+      steering (auto-computed Moore–Penrose pseudo-inverse of the bar
+      axes, overridable via `steering_matrix`). `tamComm` needs a written
+      `dcm_BS` (its default zero matrix trips a Basilisk bug check) —
+      wired to identity.
+- [x] Momentum management (`[spacecraft.fsw.momentum_management]`):
+      `thrMomentumDumping` (`thrMomentumManagement` → `thrForceMapping` →
+      `thrMomentumDumping`; wheel momentum 92 → 9 N·m·s while pointing
+      holds) and `mtbMomentumManagementSimple` (magnetic desat: 0.92 →
+      0.37 N·m·s with saturated 50 A·m² bars).
+      `thrMomentumManagement` computes delta-H once per `Reset` and
+      `thrMomentumDumping` ignores t=0-stamped requests, so a small Python
+      bridge re-arms the evaluation every `rearm_period` seconds.
+- [x] Null-space desaturation (`[spacecraft.fsw.desaturation]`):
+      `rwNullSpace` steers four-wheel pyramids toward desired speeds
+      without fighting the attitude loop (rewires `rwMotorTorque` to the
+      effector). `thrustRWDesat` is superseded upstream; stays `[custom]`.
+- [x] Allocation/effector cross-checks: every allocation and management
+      scheme names its required effector kind, validated at load
+      (`spacecraft.effectors` must contain it); two writers of one
+      effector command input (e.g. `thrusterTorque` + thruster dumping)
+      raise a `BuildError` naming both.
+- [x] Control law → effector exclusivity: with an allocation configured the
+      commanded torque reaches the hub *only* through the effectors
+      (`extFT` stays unlinked); previously the control output also torqued
+      the hub directly, inflating authority for wheel/thruster vehicles.
+      RW factory now honours `useMaxTorque` so `max_torque` limits bite.
+- [x] New auto-recorded streams `{sc}.thruster_cmds` (`OnTimeRequest`,
+      commanded forces) and `{sc}.mtb_cmds` (`mtbDipoleCmds`).
 
 ### 2026-11-20 — Phase 3: sensors & estimation
 Validated end-to-end against installed **Basilisk 2.12.2** (new example
@@ -216,8 +268,8 @@ Legend: ❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end
 | Dynamics hub | `spacecraft` | ✅ |
 | Gravity/world | `simIncludeGravBody`, SPICE, sph-harm, third-body | ✅ (polyhedral via `[custom]`) |
 | Reaction wheels | `reactionWheelStateEffector`, `simIncludeRW` | ✅ |
-| Thrusters | `thrusterStateEffector` | ❌ (Phase 4; `[custom]` reachable) |
-| MTB | `MtbEffector` | ❌ (Phase 4; `[custom]` reachable) |
+| Thrusters | `thrusterStateEffector`, `thrusterDynamicEffector` | ✅ (state-model thrusters via `[custom]`) |
+| MTB | `MtbEffector` | ✅ |
 | SRP | `radiationPressure`, `facetSRPDynamicEffector` | ✅ |
 | Drag | `dragDynamicEffector`, `facetDragDynamicEffector` | ✅ |
 | Magnetic field | `magneticFieldWMM`, `magneticFieldCenteredDipole` | ✅ |
@@ -227,7 +279,8 @@ Legend: ❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end
 | Estimation | `simpleNav`, `InertialUKF`, `cssWlsEst`, `sunlineSuKF` | ✅ |
 | Att guidance | `inertial3D` ✅ · `velocityPoint`, `hillPoint` ❌ | 🔧 |
 | Att control | `mrpFeedback` ✅ · `mrpPD`, steering laws ❌ | 🔧 |
-| Att effector iface | `rwMotorTorque` ✅ · `thrForceMapping` ❌ | 🔧 |
+| Att effector iface | `rwMotorTorque`, `thrForceMapping`, `dipoleMapping` | ✅ |
+| Momentum mgmt | `thrMomentumManagement`, `thrMomentumDumping`, `mtbMomentumManagementSimple`, `rwNullSpace` | ✅ |
 | Formation | `formationBarycenter`, `hillStateConverter` | ❌ (Phase 6; `[custom]` reachable) |
 | Comms | `simpleAntenna`, `linkBudget` | ❌ (Phase 6; `[custom]` reachable) |
 | Monte Carlo | `MonteCarlo.Controller` | ❌ (Phase 6) |

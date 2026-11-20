@@ -149,3 +149,7 @@ class SpacecraftSection(ScenarioModel):
             if effector.type == "reactionWheels":
                 return effector
         return None
+
+    def has_effector(self, type_name: str) -> bool:
+        """Return whether an effector of ``type_name`` is configured."""
+        return any(effector.type == type_name for effector in self.effectors)

@@ -160,7 +160,12 @@ def _descend(annotation: Any, node: Any) -> type[BaseModel]:
     if args:  # Union / discriminated union
         if isinstance(node, dict) and "type" in node:
             for arg in args:
-                disc = arg.model_fields.get("type") if isinstance(arg, type) else None
+                model = (
+                    arg
+                    if isinstance(arg, type) and issubclass(arg, BaseModel)
+                    else None
+                )
+                disc = model.model_fields.get("type") if model else None
                 if disc is not None:
                     default = disc.default
                     if default == node["type"]:

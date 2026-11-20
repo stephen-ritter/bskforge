@@ -65,11 +65,83 @@ class ReactionWheelsConfig(PassthroughModel):
         return self
 
 
+class ThrusterDevice(PassthroughModel):
+    """A single thruster device.
+
+    Attributes:
+        name: Optional device label (5 characters max).
+        direction_B: Force direction unit vector in the body frame.
+        position_B: Thruster location in the body frame.
+        max_thrust: Peak force; forwarded as ``MaxThrust``.
+        model: ``simIncludeThruster`` preset name (e.g.
+            ``"MOOG_Monarc_5"``); ``"Blank_Thruster"`` takes its
+            characteristics from the knobs and ``params`` below.
+        params: Extra keyword arguments forwarded to
+            :meth:`simIncludeThruster.thrusterFactory.create` (e.g.
+            ``steadyIsp``, ``areaNozzle``, ``useMinPulseTime``).
+    """
+
+    name: str | None = None
+    direction_B: Vec3 = [1.0, 0.0, 0.0]
+    position_B: Vec3 = [0.0, 0.0, 0.0]
+    max_thrust: float | None = Field(None, gt=0, description="Peak force [N]")
+    model: str = "Blank_Thruster"
+
+
 class ThrustersConfig(PassthroughModel):
-    """Thruster set (effector wiring lands in Phase 4)."""
+    """Thruster set: ``type = "thrusters"``.
+
+    Attributes:
+        thrusters: Individual thruster devices of this set.
+    """
 
     type: Literal["thrusters"] = "thrusters"
-    thrusters: list[dict] = Field(default_factory=list)
+    thrusters: list[ThrusterDevice] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_thrusters(self) -> ThrustersConfig:
+        if not self.thrusters:
+            raise ValueError(
+                "a thrusters effector needs at least one "
+                "[[spacecraft.effectors.thrusters.thrusters]] entry"
+            )
+        return self
+
+
+class MtbBar(PassthroughModel):
+    """A single magnetic torque bar.
+
+    Attributes:
+        name: Optional device label.
+        direction_B: Dipole axis unit vector in the body frame.
+        max_dipole: Peak magnetic dipole moment.
+    """
+
+    name: str | None = None
+    direction_B: Vec3 = [1.0, 0.0, 0.0]
+    max_dipole: float = Field(0.12, gt=0, description="Peak dipole [A*m^2]")
+
+
+class MtbConfig(PassthroughModel):
+    """Magnetic torque-bar set: ``type = "mtb"``.
+
+    Producing torque requires an ``[environment.magnetic_field]`` model:
+    the effector and its dipole chain read the local field vector.
+
+    Attributes:
+        bars: Individual torque-bar devices of this set.
+    """
+
+    type: Literal["mtb"] = "mtb"
+    bars: list[MtbBar] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_bars(self) -> MtbConfig:
+        if not self.bars:
+            raise ValueError(
+                "an mtb effector needs at least one [[spacecraft.effectors.bars]] entry"
+            )
+        return self
 
 
 class GravityGradientDisturbance(PassthroughModel):
@@ -178,7 +250,7 @@ DisturbanceConfig = Annotated[
 
 
 EffectorConfig = Annotated[
-    ReactionWheelsConfig | ThrustersConfig,
+    ReactionWheelsConfig | ThrustersConfig | MtbConfig,
     Field(discriminator="type"),
 ]
 """Discriminated effector union for ``[[spacecraft.effectors]]``."""
