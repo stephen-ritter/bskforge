@@ -1,0 +1,100 @@
+# Two-satellite formation flying simulation
+# Both satellites in similar LEO orbits with attitude control
+
+[simulation]
+name = "Two-Sat Formation"
+dt_dynamics = 0.1
+dt_fsw = 0.1
+duration = 1800.0
+
+[simulation.central_body]
+name = "earth"
+
+# --- Chief satellite ---
+
+[[satellites]]
+name = "chief"
+
+[satellites.hub]
+mass = 750.0
+
+[satellites.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+[satellites.orbit]
+type = "elements"
+
+[satellites.orbit.elements]
+semi_major_axis = 7000000.0
+eccentricity = 0.0001
+inclination = 33.3
+raan = 48.2
+arg_perigee = 347.8
+true_anomaly = 85.3
+
+[satellites.attitude.initial]
+sigma_BN = [0.05, 0.05, -0.05]
+omega_BN_B = [0.001, -0.001, 0.001]
+
+[satellites.attitude.control]
+type = "mrp_feedback"
+
+[satellites.attitude.control.mrp_feedback]
+k = 3.5
+p = 30.0
+ki = -1.0
+
+# Chief recorder settings (higher fidelity)
+[satellites.recorder]
+enabled = true
+sample_time = 0.5
+
+[satellites.attitude.control.recorder]
+enabled = true
+sample_time = 0.5
+
+# --- Deputy satellite ---
+
+[[satellites]]
+name = "deputy"
+
+[satellites.hub]
+mass = 500.0
+
+[satellites.hub.inertia]
+ixx = 400.0
+iyy = 350.0
+izz = 300.0
+
+[satellites.orbit]
+type = "elements"
+
+[satellites.orbit.elements]
+semi_major_axis = 7000500.0
+eccentricity = 0.0001
+inclination = 33.3
+raan = 48.2
+arg_perigee = 347.8
+true_anomaly = 85.5
+
+[satellites.attitude.initial]
+sigma_BN = [-0.1, 0.15, 0.05]
+omega_BN_B = [-0.002, 0.01, -0.005]
+
+[satellites.attitude.control]
+type = "mrp_feedback"
+
+[satellites.attitude.control.mrp_feedback]
+k = 2.0
+p = 25.0
+ki = -1.0
+
+# Deputy recorder settings (lower fidelity)
+[satellites.recorder]
+enabled = true
+sample_time = 1.0
+
+[satellites.attitude.control.recorder]
+enabled = false

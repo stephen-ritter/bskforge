@@ -1,0 +1,64 @@
+# Single satellite LEO detumble simulation
+# Based on scenarioAttitudeFeedback.py
+
+[simulation]
+name = "LEO Detumble"
+dt_dynamics = 0.1
+dt_fsw = 0.1
+duration = 600.0
+
+[simulation.central_body]
+name = "earth"
+
+# Visualization settings (requires Basilisk Viz/Unity installed)
+# [simulation.visualization]
+# enabled = true
+# live_stream = false      # Stream state data in real-time to Vizard
+# broadcast_stream = false # Broadcast messages for listener Vizards
+# save_file = "viz_data"   # Path to visualization save file
+
+# --- Satellite definition ---
+
+[[satellites]]
+name = "sc1"
+
+[satellites.hub]
+mass = 750.0
+
+[satellites.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+[satellites.orbit]
+type = "elements"
+
+[satellites.orbit.elements]
+semi_major_axis = 10000000.0
+eccentricity = 0.01
+inclination = 33.3
+raan = 48.2
+arg_perigee = 347.8
+true_anomaly = 85.3
+
+[satellites.attitude.initial]
+sigma_BN = [0.1, 0.2, -0.3]
+omega_BN_B = [0.001, -0.01, 0.03]
+
+[satellites.attitude.control]
+type = "mrp_feedback"
+
+[satellites.attitude.control.mrp_feedback]
+k = 3.5
+p = 30.0
+ki = -1.0
+
+# --- Recorder configuration (per-component) ---
+
+[satellites.recorder]
+enabled = true
+sample_time = 0.5
+
+[satellites.attitude.control.recorder]
+enabled = true
+sample_time = 0.5

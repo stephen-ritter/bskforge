@@ -1,0 +1,156 @@
+# Single satellite LEO simulation with sensors and effectors
+# Based on scenarioAttitudeFeedback.py
+
+[simulation]
+name = "LEO Detumble with Sensors"
+dt_dynamics = 0.1
+dt_fsw = 0.1
+duration = 600.0
+
+[simulation.central_body]
+name = "earth"
+
+# --- Satellite definition ---
+
+[[satellites]]
+name = "sc1"
+
+[satellites.hub]
+mass = 750.0
+
+[satellites.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+[satellites.orbit]
+type = "elements"
+
+[satellites.orbit.elements]
+semi_major_axis = 10000000.0
+eccentricity = 0.01
+inclination = 33.3
+raan = 48.2
+arg_perigee = 347.8
+true_anomaly = 85.3
+
+[satellites.attitude.initial]
+sigma_BN = [0.1, 0.2, -0.3]
+omega_BN_B = [0.001, -0.01, 0.03]
+
+[satellites.attitude.control]
+type = "mrp_feedback"
+
+[satellites.attitude.control.mrp_feedback]
+k = 3.5
+p = 30.0
+ki = -1.0
+
+# --- Sensors ---
+
+[[satellites.sensors.cameras]]
+name = "imagingCam"
+sigma_CB = [0, 0, 1]
+field_of_view = 30.0
+image_width = 640
+image_height = 480
+gaussian = 2.0
+blur_param = 3
+dark_current = 1.0
+
+[[satellites.sensors.cameras]]
+name = "navCam"
+sigma_CB = [1, 0, 0]
+field_of_view = 45.0
+image_width = 320
+image_height = 240
+
+[[satellites.sensors.sun_sensors]]
+name = "sunSensor1"
+sigma_SB = [0, 0, 1]
+sampling_time = 1.0
+
+[[satellites.sensors.sun_sensors]]
+name = "sunSensor2"
+sigma_SB = [1, 0, 0]
+sampling_time = 1.0
+
+[[satellites.sensors.magnetometers]]
+name = "magSensor"
+bias = [0, 0, 0]
+noise_sigma = 0.1
+sampling_time = 1.0
+
+[[satellites.sensors.star_trackers]]
+name = "starTracker1"
+sigma_SB = [0, 0, 1]
+noise_sigma = 0.001
+sampling_time = 2.0
+
+[[satellites.sensors.imus]]
+name = "imu"
+sigma_SB = [0, 0, 0]
+gyro_noise_sigma = 0.0001
+sampling_time = 0.01
+
+# --- Effectors ---
+
+[satellites.effectors.reaction_wheels]
+inertia_rw = 0.01
+
+[[satellites.effectors.reaction_wheels.wheels]]
+name = "RW-x"
+direction_B = [1, 0, 0]
+max_speed = 5500
+max_torque = -1
+jitter_model = "none"
+
+[[satellites.effectors.reaction_wheels.wheels]]
+name = "RW-y"
+direction_B = [0, 1, 0]
+max_speed = 5500
+max_torque = -1
+jitter_model = "none"
+
+[[satellites.effectors.reaction_wheels.wheels]]
+name = "RW-z"
+direction_B = [0, 0, 1]
+max_speed = 5500
+max_torque = -1
+jitter_model = "none"
+
+[[satellites.effectors.thrusters]]
+name = "thruster_z_neg"
+direction_B = [0, 0, -1]
+r_CMact_B = [0, 0, -0.5]
+thrust_magnitude = 0.1
+isp = 200
+
+[satellites.effectors.srp]
+facet_areas = [2.0, 2.0, 1.0, 1.0, 3.0, 3.0]
+reflectivity_coeff = 0.3
+absorption_coeff = 0.7
+
+[satellites.effectors.drag]
+drag_coefficient = 2.2
+reference_area = 10.0
+
+# --- Recorder configuration (per-component) ---
+
+# Spacecraft state at 0.5s intervals
+[satellites.recorder]
+enabled = true
+sample_time = 0.5
+
+# Control torque at 0.5s intervals
+[satellites.attitude.control.recorder]
+enabled = true
+sample_time = 0.5
+
+# RW speeds at 1.0s intervals (lower fidelity than state)
+[satellites.effectors.reaction_wheels.recorder]
+enabled = true
+sample_time = 1.0
+
+# Individual thruster recorders are set per-thruster above
+# (each thruster has its own recorder field that defaults to enabled=true)
