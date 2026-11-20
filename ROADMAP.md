@@ -12,31 +12,30 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-_(nothing in flight — Phase 1 complete, see below)_
+_(nothing in flight — Phase 2 complete, see below)_
 
 ---
 
 ## Up next
 
-### Phase 2 — Environment fidelity  _(user-prioritized next)_
-- [ ] SPICE/Pooch epoch + kernels via `DataFile` enums (`createSpiceInterface`),
-      replacing the static `[world.sun]` message for CSS/eclipse consumers
-- [ ] Spherical-harmonics gravity (`useSphericalHarmonicsGravityModel` +
-      `loadGravFromFile`), polyhedral bodies
-- [ ] Magnetic field: WMM, centered dipole (`simSetPlanetEnvironment`) +
-      magnetometer sensor builder (`magInMsg` wiring)
-- [ ] Eclipse (umbra/penumbra), solar flux
-- [ ] Atmosphere: MSIS, exponential, tabular; wind models
-- [ ] SRP (plain + faceted), drag (plain + faceted) as effectors
-- [ ] Global and per-vehicle environment override wiring (replace today's
-      `UnsupportedError` guard)
-- [ ] Disturbance effectors (gravity gradient, solar radiation pressure torque,
-      third-body)
+### Phase 2 — Environment fidelity  ✅ (see Completed)
+- [x] SPICE/Pooch epoch + kernels via `DataFile` enums (`createSpiceInterface`)
+- [x] Spherical-harmonics gravity (`useSphericalHarmonicsGravityModel`);
+      polyhedral bodies remain available through `[custom]`
+- [x] Magnetic field: WMM, centered dipole (`simSetPlanetEnvironment`) +
+      magnetometer sensor (`magInMsg` wiring)
+- [x] Eclipse (penumbra/umbra), CSS + SRP shadow feed
+- [x] Atmosphere: exponential, MSIS (static space-weather inputs); 2.12
+      ships only a zero wind model, so wind stays `[custom]`-only
+- [x] SRP (cannonball + faceted), drag (cannonball + faceted) as disturbances
+- [x] Global and per-vehicle environment override wiring
+- [x] Disturbance effectors: gravity gradient, drag, SRP (third-body gravity
+      is automatic: any SPICE `[[world.gravities]] body` perturbs vehicles)
+- [ ] Solar-flux override: no consumer module in the 2.12 wheel; remains an
+      explicit `UnsupportedError`
 
 ### Phase 3 — Sensors & estimation
 - [ ] Sensor noise polish (`setAMatrix`, ST sampling period, IMU drifting bias)
-- [ ] Sensor interfaces (`CSSSensorData`, `STSensorData`, `IMUSensorData`,
-      `TAMSensorData`)
 - [ ] Estimators: `InertialUKF`, `CSSEst`, `sunlineSuKF`
 - [ ] Camera (+opnav guard via `Basilisk.hasBuildFeature`)
 
@@ -69,6 +68,44 @@ _(nothing in flight — Phase 1 complete, see below)_
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 2: environment fidelity
+Validated end-to-end against installed **Basilisk 2.12.2** (new example
+`examples/earth_environment.toml` + 12 new tests, 40 total passing).
+- [x] `[world.spice]`: epoch-driven `createSpiceInterface`, kernel selection
+      by `DataFile.EphemerisData` name, automatic `loadEphemeris` for
+      non-central bodies, `zeroBase` = central body; per-body
+      `SpicePlanetStateMsg` registry (`ctx.planet_state_msgs`). The sun
+      message feeding CSS/SRP/eclipse becomes live SPICE when the sun is a
+      listed gravity body.
+- [x] Spherical-harmonics gravity: `grav_order` + optional `grav_file`
+      (per-planet canonical defaults, e.g. Earth → GGM03S).
+- [x] Third-body gravity is implicit: extra `[[world.gravities]]` bodies with
+      SPICE ephemerides perturb every vehicle (moon in the example).
+- [x] `[environment]` models built and shared per configuration:
+      magnetic field (centered dipole presets / WMM file with `[world].epoch`
+      message), atmosphere (exponential presets / MSIS with static
+      Ap/F10.7), penumbra eclipse (sun + central-body messages wired,
+      `rEqCustom` from the body radius).
+- [x] Per-vehicle `[spacecraft.environment]` deep-merged over the global
+      section (`resolve_environment`); environment modules attach any number
+      of vehicles (`addSpacecraftToModel` index → per-vehicle output msg).
+- [x] `[[spacecraft.disturbances]]`: gravity gradient, drag (cannonball /
+      faceted plates), SRP (cannonball / faceted with diffuse+specular
+      coefficients), each fed from the environment messages and attached as
+      dynamic effectors.
+- [x] Magnetometer sensor built for real (`magInMsg` ← field module,
+      `dcm_SB` from `sigma_SB`, noise σ/bias/saturation; `tamDataOutMsg`
+      recorded).
+- [x] Phase order updated: world → spacecraft → environment → disturbances →
+      effectors → sensors → FSW → custom → recorders → events → viz.
+- [x] Physics-level tests: WMM field magnitude at LEO, SRP cannonball force
+      vs analytic expectation, drag density chain, gravity-gradient torque,
+      SPICE sun distance ≈ 1 au, TAM vector rotation over an orbit, faceted
+      facet counts + forces.
+- Notes: `forceExternal_B` vs `_N` retention differs between
+  `dragDynamicEffector` (B kept) and `radiationPressure` (N kept);
+  `FacetSRPDynamicEffector` requires `setNumFacets()` before `addFacet()`.
 
 ### 2026-11-20 — Phase 1: core rewrite (schema v2 + builders + `[custom]` escape hatch)
 Validated end-to-end against installed **Basilisk 2.12.2** (`bsk[all]` wheel).
@@ -142,16 +179,16 @@ Legend: ❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end
 | Family | Module examples | Status |
 | --- | --- | --- |
 | Dynamics hub | `spacecraft` | ✅ |
-| Gravity/world | `simIncludeGravBody` (presets, custom) | 🔧 (SPICE: Phase 2) |
+| Gravity/world | `simIncludeGravBody`, SPICE, sph-harm, third-body | ✅ (polyhedral via `[custom]`) |
 | Reaction wheels | `reactionWheelStateEffector`, `simIncludeRW` | ✅ |
 | Thrusters | `thrusterStateEffector` | ❌ (Phase 4; `[custom]` reachable) |
 | MTB | `MtbEffector` | ❌ (Phase 4; `[custom]` reachable) |
-| SRP | `facetSRPDynamicEffector`, `radiationPressure` | ❌ (Phase 2; `[custom]` reachable) |
-| Drag | `dragDynamicEffector`, `facetDragDynamicEffector` | ❌ (Phase 2; `[custom]` reachable) |
-| Magnetic field | `magneticFieldWMM`, `magneticFieldCenteredDipole` | 🟡 (Phase 2) |
-| Atmosphere | `MsisAtmosphere`, `ExponentialAtmosphere` | 🟡 (Phase 2) |
-| Eclipse | `eclipse` | 🟡 (Phase 2) |
-| Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor` ✅ · `magnetometer` ❌ | 🔧 |
+| SRP | `radiationPressure`, `facetSRPDynamicEffector` | ✅ |
+| Drag | `dragDynamicEffector`, `facetDragDynamicEffector` | ✅ |
+| Magnetic field | `magneticFieldWMM`, `magneticFieldCenteredDipole` | ✅ |
+| Atmosphere | `ExponentialAtmosphere`, `MsisAtmosphere` | ✅ (2.12 has no wind model) |
+| Eclipse | `eclipse` | ✅ |
+| Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer` ✅ · camera ❌ | 🔧 |
 | Estimation | `simpleNav` ✅ · `InertialUKF`, `CSSEst` ❌ | 🔧 |
 | Att guidance | `inertial3D` ✅ · `velocityPoint`, `hillPoint` ❌ | 🔧 |
 | Att control | `mrpFeedback` ✅ · `mrpPD`, steering laws ❌ | 🔧 |

@@ -11,7 +11,8 @@
 from __future__ import annotations
 
 import difflib
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from bskforge.errors import BuildError, UnsupportedError
 
@@ -53,8 +54,7 @@ def unsupported(feature: str, phase: str) -> Callable[..., Any]:
 
     def _raise(*_args: Any, **_kwargs: Any) -> Any:
         raise UnsupportedError(
-            f"{feature} is scheduled for {phase}; see ROADMAP.md coverage "
-            "checklist"
+            f"{feature} is scheduled for {phase}; see ROADMAP.md coverage checklist"
         )
 
     return _raise

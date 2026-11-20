@@ -76,19 +76,22 @@ Every Basilisk object created by the domain builders also accepts a free-form
 module at build time (with did-you-mean errors), so new upstream parameters
 need no bskforge changes.
 
-## Status (Phase 1: core rewrite)
+## Status (Phases 1–2: core + environment fidelity)
 
 Implemented: TOML loading with `extends` inheritance and friendly errors,
-gravity-body worlds (presets + custom point masses), hub + orbit/attitude
-initial state, reaction-wheel effectors, CSS / star tracker / IMU sensors,
+SPICE-driven worlds (presets, custom point masses, spherical harmonics,
+third-body perturbations), hub + orbit/attitude initial state,
+reaction-wheel effectors, CSS / star tracker / IMU / magnetometer sensors,
+magnetic field (dipole, WMM), atmosphere (exponential, MSIS), penumbra
+eclipse, gravity-gradient / drag / SRP disturbances (cannonball and faceted),
 `inertial3D` → `simpleNav`/`attTrackingError` → `mrpFeedback` →
 `rwMotorTorque` FSW stacks, multi-spacecraft scenarios, message recorders
 with CSV/parquet/npz export, Vizard visualization hooks, and the `[custom]`
 escape hatch.
 
-Pending: SPICE ephemerides, magnetic field / atmosphere / eclipse, and
-disturbance effectors (Phase 2); imaging sensors (Phase 3); thrusters and
-power/thermal domain sugar (Phase 4); Monte Carlo (Phase 6). Configuring any
+Pending: imaging sensors and Kalman-filter estimators (Phase 3); thrusters,
+MTB and momentum management (Phase 4); extended guidance/control laws
+(Phase 5); comms, formation FSW and Monte Carlo (Phase 6). Configuring any
 pending block fails with a clear phase pointer instead of silently ignoring
 it.
 

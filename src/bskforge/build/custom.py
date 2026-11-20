@@ -11,7 +11,8 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from Basilisk.utilities import macros
 
@@ -25,11 +26,9 @@ def build_custom_tasks(ctx: SimContext) -> None:
     """Create user-declared tasks (and their processes) before any modules."""
     for task_cfg in ctx.config.custom.tasks:
         process = ctx.ensure_process(task_cfg.process, task_cfg.process_priority)
-        task = ctx.sim.CreateNewTask(
-            task_cfg.name, macros.sec2nano(task_cfg.rate)
-        )
+        task = ctx.sim.CreateNewTask(task_cfg.name, macros.sec2nano(task_cfg.rate))
         process.addTask(task)
-        ctx._tasks[task_cfg.name] = task_cfg.name  # noqa: SLF001
+        ctx._tasks[task_cfg.name] = task_cfg.name
 
 
 def build_custom_modules(ctx: SimContext) -> None:
@@ -107,8 +106,7 @@ def _split_endpoint(endpoint: str, side: str) -> tuple[str, str]:
     """Split ``"tag.messageName"`` into its tag and message field name."""
     if "." not in endpoint:
         raise BuildError(
-            f"custom connection {side} {endpoint!r} must be "
-            '"tag.messageName"'
+            f'custom connection {side} {endpoint!r} must be "tag.messageName"'
         )
     tag, field = endpoint.rsplit(".", 1)
     return tag, field
@@ -120,14 +118,12 @@ def _message(ctx: SimContext, tag: str, msg_name: str) -> Any:
     if module is None:
         known = ", ".join(sorted(ctx.modules_by_tag))
         raise BuildError(
-            f"custom connection references unknown tag {tag!r}; known tags: "
-            f"{known}"
+            f"custom connection references unknown tag {tag!r}; known tags: {known}"
         )
     msg = getattr(module, msg_name, None)
     if msg is None:
         raise BuildError(
-            f"module {tag!r} has no message {msg_name!r} on this Basilisk "
-            "build"
+            f"module {tag!r} has no message {msg_name!r} on this Basilisk build"
         )
     return msg
 
@@ -143,9 +139,7 @@ def _condition_fn(event_cfg: CustomEvent) -> Callable[..., Any]:
             return [event_write_data.sim_timeSec >= trigger, True]
 
         return _time_condition
-    raise BuildError(
-        f"event {event_cfg.name!r} needs condition_time or condition"
-    )
+    raise BuildError(f"event {event_cfg.name!r} needs condition_time or condition")
 
 
 def _hook(import_path: str, role: str) -> Callable[..., Any]:
@@ -165,5 +159,5 @@ def _hook(import_path: str, role: str) -> Callable[..., Any]:
     return fn
 
 
-def _noop(event_write_data: Any) -> None:  # noqa: ARG001
+def _noop(event_write_data: Any) -> None:
     """Default no-op event effect."""

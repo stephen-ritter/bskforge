@@ -75,11 +75,24 @@ class ImuSensorConfig(PassthroughModel):
 
 
 class MagnetometerConfig(PassthroughModel):
-    """Magnetometer (magnetic-field wiring lands in Phase 2)."""
+    """Magnetometer: ``type = "magnetometer"``.
+
+    Requires an ``[environment.magnetic_field]`` model to measure.
+
+    Attributes:
+        name: Sensor ModelTag; unique within the vehicle.
+        sigma_SB: MRP orientation of sensor frame relative to body frame.
+        noise_sigma: White-noise standard deviation per axis [T].
+        bias: Additive sensor bias [T].
+        saturate: Clamp output to ``[minOutput, maxOutput]``.
+    """
 
     type: Literal["magnetometer"] = "magnetometer"
     name: str = "magnetometer"
     sigma_SB: Vec3 = [0.0, 0.0, 0.0]
+    noise_sigma: float | None = Field(None, ge=0, description="Noise sigma [T]")
+    bias: Vec3 | None = Field(None, description="Sensor bias [T]")
+    saturate: bool = False
     recorder: RecorderConfig = Field(default_factory=RecorderConfig)
 
 

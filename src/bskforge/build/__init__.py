@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from bskforge.build import custom, environment, recorders, viz
 from bskforge.build.context import SimContext
+from bskforge.build.disturbances import build_disturbances
 from bskforge.build.effectors import EFFECTOR_BUILDERS
 from bskforge.build.fsw import build_fsw
 from bskforge.build.registry import unsupported
@@ -34,8 +35,8 @@ class BuiltScenario:
 def build_scenario(config: ScenarioConfig) -> BuiltScenario:
     """Assemble the complete Basilisk graph for one scenario document.
 
-    Phases, in order: custom tasks → world → spacecraft → effectors →
-    sensors → FSW → custom modules → environment guard → custom
+    Phases, in order: custom tasks → world → spacecraft → environment →
+    disturbances → effectors → sensors → FSW → custom modules → custom
     connections → recorders → custom events → visualization.
 
     Args:
@@ -54,8 +55,13 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
     build_world(ctx)
 
     for sc_cfg in config.spacecraft:
-        bundle = build_vehicle(ctx, sc_cfg)
-        for effector_cfg in sc_cfg.effectors:
+        build_vehicle(ctx, sc_cfg)
+
+    environment.build_environment(ctx)
+
+    for bundle in ctx.bundles.values():
+        build_disturbances(ctx, bundle)
+        for effector_cfg in bundle.config.effectors:
             builder = EFFECTOR_BUILDERS.get(effector_cfg.type)
             if builder is None:
                 raise UnsupportedError(
@@ -63,7 +69,7 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
                     f"supported: {', '.join(sorted(EFFECTOR_BUILDERS))}"
                 )
             builder(ctx, bundle, effector_cfg)
-        for sensor_cfg in sc_cfg.sensors:
+        for sensor_cfg in bundle.config.sensors:
             sensor_builder = SENSOR_BUILDERS.get(sensor_cfg.type)
             if sensor_builder is None:
                 raise UnsupportedError(
@@ -74,7 +80,6 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
         build_fsw(ctx, bundle)
 
     custom.build_custom_modules(ctx)
-    environment.check_environment_support(ctx)
     custom.build_custom_connections(ctx)
     recorders.build_recorders(ctx)
     custom.build_custom_events(ctx)
@@ -85,8 +90,6 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
 
 
 # Registry completeness: types present in the schema but deferred phases.
-EFFECTOR_BUILDERS.setdefault(
-    "thrusters", unsupported("Thruster effectors", "Phase 4")
-)
+EFFECTOR_BUILDERS.setdefault("thrusters", unsupported("Thruster effectors", "Phase 4"))
 
 __all__ = ["BuiltScenario", "build_scenario"]

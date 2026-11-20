@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from bskforge.schema.base import PassthroughModel, Vec3
+from bskforge.schema.base import PassthroughModel, ScenarioModel, Vec3
 from bskforge.schema.recorder import RecorderConfig
 
 
@@ -72,15 +72,109 @@ class ThrustersConfig(PassthroughModel):
     thrusters: list[dict] = Field(default_factory=list)
 
 
-class DisturbanceConfig(PassthroughModel):
-    """Dynamics disturbance effector: ``[[spacecraft.disturbances]]``.
+class GravityGradientDisturbance(PassthroughModel):
+    """Gravity-gradient torque: ``type = "gravityGradient"``.
 
-    SRP and drag effector wiring lands in Phase 2; the block validates today
-    so scenario files can already express their disturbance intent.
+    Uses the central body's ``mu`` and the vehicle's mass properties
+    (hub inertia and CoM offset) automatically.
     """
 
-    type: Literal["srp", "drag"]
-    params: dict = Field(default_factory=dict)
+    type: Literal["gravityGradient"] = "gravityGradient"
+
+
+class DragFacet(ScenarioModel):
+    """One flat plate of a faceted drag geometry.
+
+    Attributes:
+        area: Facet area.
+        drag_coeff: Facet drag coefficient.
+        normal_B: Outward unit normal in the body frame.
+        location_B: Facet center-of-pressure offset in the body frame.
+    """
+
+    area: float = Field(gt=0, description="Facet area [m^2]")
+    drag_coeff: float = Field(2.2, gt=0, description="Facet drag coeff [-]")
+    normal_B: Vec3
+    location_B: Vec3 = [0.0, 0.0, 0.0]
+
+
+class SrpFacet(ScenarioModel):
+    """One facet of a faceted SRP geometry.
+
+    Attributes:
+        area: Facet area.
+        nHat_B: Outward unit normal in the body frame.
+        location_B: Facet center-of-pressure offset in the body frame.
+        diffuse_coeff: Diffuse reflection fraction.
+        specular_coeff: Specular reflection fraction.
+    """
+
+    area: float = Field(gt=0, description="Facet area [m^2]")
+    nHat_B: Vec3
+    location_B: Vec3 = [0.0, 0.0, 0.0]
+    diffuse_coeff: float = Field(0.2, ge=0, le=1)
+    specular_coeff: float = Field(0.5, ge=0, le=1)
+
+
+class DragDisturbance(PassthroughModel):
+    """Atmospheric drag: ``type = "drag"``.
+
+    Requires an ``[environment.atmosphere]`` model to source density.
+
+    Attributes:
+        model: ``"cannonball"`` (single area/Cd) or ``"faceted"``.
+        area: Cannonball projected area.
+        drag_coeff: Drag coefficient ``dragCoeff``.
+        facets: Facet list when ``model = "faceted"``.
+    """
+
+    type: Literal["drag"] = "drag"
+    model: Literal["cannonball", "faceted"] = "cannonball"
+    area: float = Field(20.0, gt=0, description="Projected area [m^2]")
+    drag_coeff: float = Field(2.2, gt=0, description="Drag coeff [-]")
+    facets: list[DragFacet] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_facets(self) -> DragDisturbance:
+        if self.model == "faceted" and not self.facets:
+            raise ValueError('drag model "faceted" requires facets')
+        return self
+
+
+class SolarRadiationPressureDisturbance(PassthroughModel):
+    """Solar radiation pressure: ``type = "solarRadiationPressure"``.
+
+    Sun position comes from ``[world]`` (static) or SPICE; add
+    ``[environment.eclipse]`` to shadow the spacecraft in eclipse.
+
+    Attributes:
+        model: ``"cannonball"`` (single area/cr) or ``"faceted"``.
+        area: Cannonball area.
+        reflection_coeff: Momentum transfer coefficient
+            ``coefficientReflection`` (1 = absorbing, 2 = specular).
+        facets: Facet list when ``model = "faceted"``.
+    """
+
+    type: Literal["solarRadiationPressure"] = "solarRadiationPressure"
+    model: Literal["cannonball", "faceted"] = "cannonball"
+    area: float = Field(20.0, gt=0, description="Cannonball area [m^2]")
+    reflection_coeff: float = Field(
+        1.3, ge=0, le=2, description="coefficientReflection [-]"
+    )
+    facets: list[SrpFacet] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_facets(self) -> SolarRadiationPressureDisturbance:
+        if self.model == "faceted" and not self.facets:
+            raise ValueError('solarRadiationPressure model "faceted" requires facets')
+        return self
+
+
+DisturbanceConfig = Annotated[
+    GravityGradientDisturbance | DragDisturbance | SolarRadiationPressureDisturbance,
+    Field(discriminator="type"),
+]
+"""Discriminated disturbance union for ``[[spacecraft.disturbances]]``."""
 
 
 EffectorConfig = Annotated[

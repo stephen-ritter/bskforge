@@ -43,6 +43,10 @@ class GravityBody(PassthroughModel):
         mu: Gravitational parameter for custom bodies.
         radius: Equatorial radius for custom bodies (Vizard model scaling).
         model_dictionary_key: Vizard model-dictionary key for this body.
+        grav_order: Spherical-harmonics truncation order; unset keeps the
+            point-mass model.
+        grav_file: Basilisk support-data grav-file key (e.g. ``"GGM03S"``,
+            ``"GGM03S_J2_only"``); defaults to the planet's canonical file.
     """
 
     name: str
@@ -55,6 +59,10 @@ class GravityBody(PassthroughModel):
         None, gt=0, description="Equatorial radius [m] (custom)"
     )
     model_dictionary_key: str | None = None
+    grav_order: int | None = Field(
+        None, ge=1, description="Spherical-harmonics order [-]"
+    )
+    grav_file: str | None = Field(None, description="LocalGravData support-file key")
 
     @model_validator(mode="after")
     def _check(self) -> GravityBody:
@@ -65,6 +73,8 @@ class GravityBody(PassthroughModel):
             )
         if self.type == "custom" and self.mu is None:
             raise ValueError("custom gravity bodies require an explicit mu")
+        if self.grav_file is not None and self.grav_order is None:
+            raise ValueError("grav_file requires grav_order")
         return self
 
 
@@ -79,7 +89,15 @@ class SunConfig(ScenarioModel):
 
 
 class SpiceConfig(ScenarioModel):
-    """SPICE ephemeris configuration (Phase 2)."""
+    """SPICE ephemerides: ``[world.spice]``.
+
+    Attributes:
+        enabled: Drive all non-central body ephemerides (and the sun
+            source) from SPICE kernels; requires ``[world].epoch``.
+        kernels: Basilisk ``DataFile.EphemerisData`` keys
+            (e.g. ``"de430"``, ``"naif0012"``); empty uses the standard
+            default kernel set.
+    """
 
     enabled: bool = False
     kernels: list[str] = Field(default_factory=list)
@@ -92,9 +110,11 @@ class WorldSection(ScenarioModel):
         central_body: Name of the central gravitating body. A preset planet
             that is auto-created when not listed in ``gravities``.
         gravities: Full body list for multi-body scenarios.
-        epoch: UTC epoch string; stored for Phase 2 (SPICE) support.
-        spice: SPICE configuration (Phase 2).
-        sun: Fixed sun position source for sun-based sensors.
+        epoch: SPICE time string, e.g. ``"2026-01-01 00:00:00.0 TDB"``;
+            required when SPICE is enabled, also feeds WMM epoch.
+        spice: SPICE configuration.
+        sun: Fixed sun position source for sun-based sensors; ignored
+            when SPICE is enabled and the sun is among ``gravities``.
     """
 
     central_body: str = "earth"

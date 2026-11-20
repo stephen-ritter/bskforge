@@ -10,7 +10,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from Basilisk.simulation import reactionWheelStateEffector
 from Basilisk.utilities import simIncludeRW
@@ -29,10 +30,10 @@ JITTER_MODELS = {
 EFFECTOR_BUILDERS: dict[str, Callable[..., Any]] = {}
 
 
-def effector_builder(type_name: str):
+def effector_builder(type_name: str) -> Callable[[Callable], Callable]:
     """Register a builder function for an effector ``type``."""
 
-    def _decorator(fn):
+    def _decorator(fn: Callable) -> Callable:
         EFFECTOR_BUILDERS[type_name] = fn
         return fn
 
@@ -52,8 +53,7 @@ def build_reaction_wheels(
     """
     if not cfg.wheels:
         raise BuildError(
-            f"spacecraft {bundle.config.name!r}: reactionWheels effector "
-            "has no wheels"
+            f"spacecraft {bundle.config.name!r}: reactionWheels effector has no wheels"
         )
 
     factory = simIncludeRW.rwFactory()

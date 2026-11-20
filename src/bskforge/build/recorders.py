@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from Basilisk.utilities import simHelpers
 
@@ -59,7 +59,7 @@ def _record(
     bundle: SpacecraftBundle,
     key: str,
     msg: Any,
-    cfg: Optional[RecorderConfig],
+    cfg: RecorderConfig | None,
 ) -> None:
     """Create one recorder on ``msg`` and register it for export."""
     if cfg is None or not cfg.enabled:

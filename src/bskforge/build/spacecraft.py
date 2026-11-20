@@ -10,10 +10,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
 from Basilisk.architecture import messaging
 from Basilisk.simulation import extForceTorque, spacecraft
 from Basilisk.utilities import macros, orbitalMotion, simHelpers
-import numpy as np
 
 from bskforge.build.context import SimContext, SpacecraftBundle
 from bskforge.build.registry import apply_params
@@ -61,7 +63,7 @@ def build_vehicle(ctx: SimContext, sc_cfg: SpacecraftSection) -> SpacecraftBundl
 
     veh_config_msg = messaging.VehicleConfigMsg()
     veh_config_msg.write(
-        messaging.VehicleConfigMsgPayload(ISCPntB_B=flat_inertia)
+        messaging.VehicleConfigMsgPayload(ISCPntB_B=flat_inertia)  # ty: ignore
     )
 
     bundle = SpacecraftBundle(
@@ -71,9 +73,7 @@ def build_vehicle(ctx: SimContext, sc_cfg: SpacecraftSection) -> SpacecraftBundl
     return bundle
 
 
-def _set_orbit_state(
-    sc, sc_cfg: SpacecraftSection, central_mu: float
-) -> None:
+def _set_orbit_state(sc: Any, sc_cfg: SpacecraftSection, central_mu: float) -> None:
     """Apply translational initial state from ``[spacecraft.orbit]``."""
     if sc_cfg.orbit is None:
         return
@@ -95,7 +95,7 @@ def _set_orbit_state(
         sc.hub.v_CN_NInit = [[v] for v in orbit.rv.velocity]
 
 
-def _set_attitude_state(sc, sc_cfg: SpacecraftSection) -> None:
+def _set_attitude_state(sc: Any, sc_cfg: SpacecraftSection) -> None:
     """Apply rotational initial state from ``[spacecraft.attitude]``."""
     if sc_cfg.attitude is None or sc_cfg.attitude.initial is None:
         return

@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from Basilisk.architecture import messaging
 from Basilisk.utilities import SimulationBaseClass, macros
@@ -52,7 +52,8 @@ class SpacecraftBundle:
     sc: Any
     ext_ft: Any
     veh_config_msg: Any
-    rw: Optional[RwBundle] = None
+    rw: RwBundle | None = None
+    resolved_env: Any = None
     fsw: dict[str, Any] = field(default_factory=dict)
     sensor_msgs: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     recorders: list[RecorderSpec] = field(default_factory=list)
@@ -70,6 +71,7 @@ class SimContext:
     """
 
     def __init__(self, config: ScenarioConfig) -> None:
+        """Create the context and the standard dynamics/FSW processes."""
         self.config = config
         self.sim = SimulationBaseClass.SimBaseClass()
         self.bundles: dict[str, SpacecraftBundle] = {}
@@ -80,6 +82,11 @@ class SimContext:
         self.modules_by_tag: dict[str, Any] = {}
         self.processes: dict[str, Any] = {}
         self._tasks: dict[str, str] = {}
+        self.spice: Any = None
+        self.planet_state_msgs: dict[str, Any] = {}
+        self.env_modules: dict[tuple[str, str], Any] = {}
+        self.env_msgs: dict[tuple[str, str], Any] = {}
+        self.eclipse: Any = None
 
         self._create_processes()
         self._tasks[DYN_TASK] = DYN_TASK
@@ -98,9 +105,7 @@ class SimContext:
         fsw_process = sim.CreateNewProcess(FSW_PROCESS, priority=2)
         self.processes[FSW_PROCESS] = fsw_process
         fsw_process.addTask(
-            sim.CreateNewTask(
-                FSW_TASK, macros.sec2nano(self.config.simulation.dt.fsw)
-            )
+            sim.CreateNewTask(FSW_TASK, macros.sec2nano(self.config.simulation.dt.fsw))
         )
 
     # -- task helpers ------------------------------------------------------
@@ -121,9 +126,7 @@ class SimContext:
         """
         if task_name not in self.tasks:
             known = ", ".join(sorted(self.tasks))
-            raise BuildError(
-                f"unknown task {task_name!r}; defined tasks: {known}"
-            )
+            raise BuildError(f"unknown task {task_name!r}; defined tasks: {known}")
         self.sim.AddModelToTask(task_name, model, ModelPriority=priority)
 
     def ensure_process(self, name: str, priority: int) -> Any:
@@ -137,9 +140,7 @@ class SimContext:
             The Basilisk process object.
         """
         if name not in self.processes:
-            self.processes[name] = self.sim.CreateNewProcess(
-                name, priority=priority
-            )
+            self.processes[name] = self.sim.CreateNewProcess(name, priority=priority)
         return self.processes[name]
 
     def register_tag(self, tag: str, module: Any) -> None:
@@ -179,13 +180,34 @@ class SimContext:
     def ensure_sun_msg(self) -> Any:
         """Return the shared sun ephemeris message, creating it on demand.
 
-        The sun position is the fixed inertial vector from ``[world.sun]``;
-        SPICE-driven sun ephemerides replace this in Phase 2.
+        With SPICE enabled and the sun among the gravity bodies, the live
+        ``SpicePlanetStateMsg`` is used; otherwise the sun is the fixed
+        inertial vector from ``[world.sun]``.
         """
         if self._sun_msg is None:
-            payload = messaging.SpicePlanetStateMsgPayload()
+            spice_msg = self.planet_state_msgs.get("sun")
+            if spice_msg is not None:
+                self._sun_msg = spice_msg
+                return self._sun_msg
+            payload = messaging.SpicePlanetStateMsgPayload()  # ty: ignore
             payload.PositionVector = list(self.config.world.sun.position)
             msg = messaging.SpicePlanetStateMsg()
             msg.write(payload)
             self._sun_msg = msg
         return self._sun_msg
+
+    def central_state_msg(self) -> Any:
+        """Return the central body's ``SpicePlanetStateMsg``.
+
+        SPICE-driven when available; otherwise a static message with the
+        central body at the (fixed) inertial origin.
+        """
+        key = self.config.world.central_body.lower()
+        msg = self.planet_state_msgs.get(key)
+        if msg is not None:
+            return msg
+        payload = messaging.SpicePlanetStateMsgPayload()  # ty: ignore
+        payload.PositionVector = [0.0, 0.0, 0.0]
+        static = messaging.SpicePlanetStateMsg()
+        static.write(payload)
+        return static

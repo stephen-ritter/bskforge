@@ -85,6 +85,12 @@ class TestValidation:
         assert orbit is not None
         assert orbit.type == "rv"
 
+    def test_faceted_drag_requires_facets(self):
+        data = minimal_scenario()
+        data["spacecraft"][0]["disturbances"] = [{"type": "drag", "model": "faceted"}]
+        with pytest.raises(ConfigError, match="requires facets"):
+            validate_scenario(data)
+
     def test_custom_gravity_body_requires_mu(self):
         data = minimal_scenario()
         data["world"] = {

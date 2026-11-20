@@ -23,7 +23,11 @@ from Basilisk.simulation import simpleNav
 from bskforge.build.context import SimContext, SpacecraftBundle
 from bskforge.build.registry import apply_params
 from bskforge.errors import BuildError
-from bskforge.schema.fsw import FswSection
+from bskforge.schema.fsw import (
+    AllocationConfig,
+    ControlConfig,
+    FswSection,
+)
 
 
 def build_fsw(ctx: SimContext, bundle: SpacecraftBundle) -> None:
@@ -47,16 +51,15 @@ def build_fsw(ctx: SimContext, bundle: SpacecraftBundle) -> None:
         return
 
     err_msg = _build_tracking_error(ctx, bundle, nav_msg, ref_msg)
-    ctrl = _build_control(ctx, bundle, cfg, err_msg)
+    ctrl = _build_control(ctx, bundle, cfg.control, err_msg)
     bundle.fsw["control"] = ctrl
-    bundle.sc_out = ctrl.cmdTorqueOutMsg
     bundle.ext_ft.cmdTorqueInMsg.subscribeTo(ctrl.cmdTorqueOutMsg)
 
     if cfg.allocation is not None:
-        _build_allocation(ctx, bundle, cfg, ctrl)
+        _build_allocation(ctx, bundle, cfg.allocation, ctrl)
 
 
-def _build_estimator(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection):
+def _build_estimator(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection) -> Any:
     """Build the navigation/estimator module and return its attitude msg."""
     if cfg.estimator is None:
         return bundle.sc.scStateOutMsg
@@ -73,7 +76,7 @@ def _build_estimator(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection)
     raise BuildError(f"unsupported estimator type {est.type!r}")
 
 
-def _build_guidance(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection):
+def _build_guidance(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection) -> Any:
     """Build the attitude-reference (guidance) module and return its msg."""
     if cfg.guidance is None:
         return None
@@ -92,7 +95,7 @@ def _build_guidance(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection):
 
 def _build_tracking_error(
     ctx: SimContext, bundle: SpacecraftBundle, nav_msg: Any, ref_msg: Any
-):
+) -> Any:
     """Build attitude tracking error combining nav attitude and reference."""
     err = attTrackingError.attTrackingError()
     err.ModelTag = f"{bundle.config.name}_attErr"
@@ -107,10 +110,12 @@ def _build_tracking_error(
 
 
 def _build_control(
-    ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection, err_msg: Any
-):
+    ctx: SimContext,
+    bundle: SpacecraftBundle,
+    control: ControlConfig,
+    err_msg: Any,
+) -> Any:
     """Build the attitude control law and subscribe it to error/config msgs."""
-    control = cfg.control
     if control.type == "mrpFeedback":
         ctrl = mrpFeedback.mrpFeedback()
         ctrl.ModelTag = f"{bundle.config.name}_mrpFeedback"
@@ -132,10 +137,12 @@ def _build_control(
 
 
 def _build_allocation(
-    ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection, ctrl: Any
+    ctx: SimContext,
+    bundle: SpacecraftBundle,
+    allocation: AllocationConfig,
+    ctrl: Any,
 ) -> None:
     """Build torque→device allocation (RW motor torque) if configured."""
-    allocation = cfg.allocation
     if allocation.type == "rwMotorTorque":
         if bundle.rw is None:
             raise BuildError(
@@ -144,10 +151,16 @@ def _build_allocation(
             )
         alloc = rwMotorTorque.rwMotorTorque()
         alloc.ModelTag = f"{bundle.config.name}_rwMotorTorque"
-        alloc.numControlAxes = len(bundle.config.reaction_wheels().wheels)
+        rw_cfg = bundle.config.reaction_wheels()
+        if rw_cfg is None:  # guarded by ScenarioConfig cross-check too
+            raise BuildError(
+                f"spacecraft {bundle.config.name!r}: rwMotorTorque allocation "
+                "requires a reactionWheels effector"
+            )
+        alloc.numControlAxes = len(rw_cfg.wheels)
         alloc.controlAxes_B = [
             float(component)
-            for wheel in bundle.config.reaction_wheels().wheels
+            for wheel in rw_cfg.wheels
             for component in wheel.direction_B
         ]
         alloc.rwParamsInMsg.subscribeTo(bundle.rw.cfg_msg)

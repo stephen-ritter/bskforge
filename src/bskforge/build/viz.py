@@ -55,8 +55,7 @@ def build_viz(ctx: SimContext) -> None:
         DYN_TASK,
         [bundle.sc for bundle in bundles],
         rwEffectorList=[
-            [bundle.rw.effector] if bundle.rw is not None else []
-            for bundle in bundles
+            [bundle.rw.effector] if bundle.rw is not None else [] for bundle in bundles
         ],
         modelDictionaryKeyList=[
             bundle.config.viz.model_key or "" for bundle in bundles

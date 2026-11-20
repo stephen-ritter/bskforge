@@ -1,0 +1,140 @@
+# Full Earth environment: SPICE ephemerides (sun + moon third-body), J2
+# gravity, WMM magnetic field, exponential atmosphere + drag, eclipse,
+# gravity gradient and solar radiation pressure disturbances.
+#
+# First run downloads SPICE/grav kernels into the local Basilisk support
+# data cache (~/.cache/bsk_support_data); afterwards it runs offline.
+
+[simulation]
+name = "Earth environment"
+duration = 3600.0
+
+[simulation.dt]
+dynamics = 0.1
+fsw = 1.0
+
+[world]
+central_body = "earth"
+epoch = "2026-01-01 00:00:00.0 TDB"
+
+[world.spice]
+enabled = true
+
+[[world.gravities]]
+name = "earth"
+central = true
+grav_order = 2                 # J2 via the canonical GGM03S file
+grav_file = "GGM03S_J2_only"
+
+[[world.gravities]]
+name = "sun"                   # live sun ephemeris for CSS/SRP/eclipse
+
+[[world.gravities]]
+name = "moon"                  # third-body gravity perturbation
+
+[environment.magnetic_field]
+type = "wmm"
+
+[environment.atmosphere]
+type = "exponential"
+
+[environment.eclipse]
+type = "penumbra"
+
+[[spacecraft]]
+name = "sc1"
+
+[spacecraft.hub]
+mass = 750.0
+[spacecraft.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+# Low orbit so drag is measurable.
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 6671e3
+e = 0.001
+i = 51.6
+
+[[spacecraft.disturbances]]
+type = "gravityGradient"
+
+[[spacecraft.disturbances]]
+type = "drag"
+area = 20.0
+drag_coeff = 2.2
+
+[[spacecraft.disturbances]]
+type = "solarRadiationPressure"
+area = 20.0
+reflection_coeff = 1.3
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.01
+[[spacecraft.effectors.wheels]]
+direction_B = [1, 0, 0]
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 1, 0]
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 0, 1]
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css1"
+boresight_B = [1, 0, 0]
+fov_deg = 40.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css2"
+boresight_B = [0, 1, 0]
+fov_deg = 40.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css3"
+boresight_B = [0, -1, 0]
+fov_deg = 40.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "css4"
+boresight_B = [0, 0, -1]
+fov_deg = 40.0
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+
+[[spacecraft.sensors]]
+type = "imuSensor"
+name = "imu"
+
+[[spacecraft.sensors]]
+type = "magnetometer"
+name = "tam"
+noise_sigma = 1.0e-9
+
+[spacecraft.fsw.guidance]
+type = "inertial3D"
+
+[spacecraft.fsw.estimator]
+type = "simpleNav"
+
+[spacecraft.fsw.control]
+type = "mrpFeedback"
+k = 3.5
+p = 30.0
+
+[spacecraft.fsw.allocation]
+type = "rwMotorTorque"
+
+[spacecraft.logging.state]
+sample_time = 5.0
+
+# [logging]
+# directory = "output/earth_environment"
