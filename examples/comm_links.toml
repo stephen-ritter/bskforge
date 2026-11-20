@@ -1,0 +1,81 @@
+# Two spacecraft and a ground station, wired with RF links.
+#
+# `relay` downlinks X-band to a station in Boulder, CO, while a
+# crosslink tracks the growing range to `peer`, one degree of RAAN
+# away in the same circular equatorial orbit plane. Each link records
+# the Basilisk `linkBudget` output: slant distance, antenna states and
+# carrier-to-noise ratio.
+
+[simulation]
+name = "comm-links"
+duration = 600.0
+
+[world]
+central_body = "earth"
+epoch = "2026-01-01 00:00:00.0 TDB"
+
+[world.spice]
+enabled = true
+
+[[world.gravities]]
+name = "earth"
+central = true
+
+[[world.gravities]]
+name = "sun"
+
+[[spacecraft]]
+name = "relay"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+e = 0.0
+i = 0.0
+raan = 0.0
+
+[[spacecraft]]
+name = "peer"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+e = 0.0
+i = 0.0
+raan = 1.0
+
+[[comm_links]]
+name = "down"
+type = "downlink"
+transmitter = "relay"
+
+[comm_links.ground_station]
+lat = 40.0069       # Boulder, Colorado
+long = -105.2649
+elevation = 1655.0
+min_elevation = 5.0
+
+[comm_links.tx_antenna]
+frequency = 8.4e9       # X-band
+tx_power = 100.0
+directivity_db = 30.0
+
+[comm_links.rx_antenna]
+frequency = 8.4e9
+directivity_db = 40.0
+
+[[comm_links]]
+name = "xlink"
+type = "crosslink"
+transmitter = "relay"
+receiver = "peer"
+
+[comm_links.tx_antenna]
+frequency = 8.4e9
+directivity_db = 30.0
+
+[comm_links.rx_antenna]
+frequency = 8.4e9
+directivity_db = 30.0

@@ -92,6 +92,7 @@ class ScenarioRunner:
         recorders = [
             spec for bundle in context.bundles.values() for spec in bundle.recorders
         ]
+        recorders += context.scenario_recorders
         recorders += _custom_recorders(context)
         result = ScenarioRunResult(
             config=self.config,

@@ -110,6 +110,7 @@ class SimContext:
         self.env_modules: dict[tuple[str, str], Any] = {}
         self.env_msgs: dict[tuple[str, str], Any] = {}
         self.eclipse: Any = None
+        self.scenario_recorders: list[RecorderSpec] = []
 
         self._create_processes()
         self._tasks[DYN_TASK] = DYN_TASK
@@ -225,6 +226,25 @@ class SimContext:
             msg.write(payload)
             self._sun_msg = msg
         return self._sun_msg
+
+    def add_scenario_recorder(
+        self,
+        key: str,
+        msg: Any,
+        sample_time: float | None = None,
+    ) -> None:
+        """Record a scenario-level message (no spacecraft bundle)."""
+        from Basilisk.utilities import simHelpers
+
+        if sample_time is None:
+            sample_time = simHelpers.samplingTime(
+                self.stop_time_ns(),
+                self.dyn_rate_ns(),
+                self.config.logging.default_num_points,
+            )
+        recorder = msg.recorder(int(sample_time))
+        self.add_dyn(recorder, priority=100)
+        self.scenario_recorders.append(RecorderSpec(key=key, recorder=recorder))
 
     def central_state_msg(self) -> Any:
         """Return the central body's ``SpicePlanetStateMsg``.

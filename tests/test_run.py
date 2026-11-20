@@ -249,6 +249,10 @@ class TestRun:
                 "guidance_laws.toml",
                 {"chaser.state", "tumor.state"},
             ),
+            (
+                "comm_links.toml",
+                {"down.link", "down.access", "xlink.link", "relay.state"},
+            ),
         ],
     )
     def test_examples_run_short_duration(self, example, expected_streams):
@@ -1247,5 +1251,134 @@ class TestGuidanceAndControl:
             validate_scenario(
                 _guidance_config(
                     {"type": "locationPointing", "target_latlon": [1.0, 2.0, 0.0]}
+                )
+            )
+
+
+# -- Phase 6: comm links ----------------------------------------------------
+
+
+def _comm_config(links: list[dict], *, world: dict | None = None) -> dict:
+    """Two equatorial SC 1 degree of RAAN apart with comm links."""
+
+    def sc(name: str, raan: float) -> dict:
+        return {
+            "name": name,
+            "orbit": {
+                "type": "elements",
+                "elements": {"a": 7000e3, "e": 0.0, "i": 0.0, "raan": raan},
+            },
+        }
+
+    scenario = {
+        "simulation": {"name": "comm", "duration": 300.0},
+        "spacecraft": [sc("a", 0.0), sc("b", 1.0)],
+        "comm_links": links,
+    }
+    if world is not None:
+        scenario["world"] = dict(world)
+    return scenario
+
+
+class TestCommLinks:
+    """RF link chains: antennas, ground station and the link budget."""
+
+    def test_crosslink_range_grows(self):
+        config = validate_scenario(
+            _comm_config(
+                [
+                    {
+                        "name": "x",
+                        "type": "crosslink",
+                        "transmitter": "a",
+                        "receiver": "b",
+                    }
+                ]
+            )
+        )
+        result = ScenarioRunner(config).run(duration=300.0)
+        link = result.frames["x.link"]
+        dist = link["distance"].to_numpy()
+        assert np.isfinite(dist).all()
+        # a 1 deg RAAN separation at 7000 km opens at roughly n * R * dt
+        assert dist[1] < dist[-1]
+        assert dist[-1] == pytest.approx(7000e3 * math.radians(1.0), rel=0.25)
+        # both ends hold the scheduled transmit/receive states
+        assert set(link["antennaState1"].to_numpy()[1:]) == {2.0}
+        assert set(link["antennaState2"].to_numpy()[1:]) == {1.0}
+        assert np.all(link["CNR2"].to_numpy() >= 0.0)
+
+    def test_downlink_geometry_and_access(self):
+        config = validate_scenario(
+            _comm_config(
+                [
+                    {
+                        "name": "gs",
+                        "type": "downlink",
+                        "transmitter": "a",
+                        "ground_station": {
+                            "lat": 40.0069,
+                            "long": -105.2649,
+                            "elevation": 1655.0,
+                        },
+                    }
+                ],
+                world=SPICE_WORLD,
+            )
+        )
+        result = ScenarioRunner(config).run(duration=300.0)
+        link = result.frames["gs.link"]
+        dist = link["distance"].to_numpy()[1:]
+        assert np.isfinite(dist).all()
+        assert np.all(dist > 0.0)
+        # the slant range stays inside the chord through the Earth shell
+        assert np.all(dist < 2.0 * 7000e3)
+        access = result.frames["gs.access"]
+        assert set(access["hasAccess"].to_numpy()).issubset({0.0, 1.0})
+        rx = result.frames["gs.rx"]
+        assert np.allclose(rx["frequency"].to_numpy()[1:], 8.4e9)
+
+    def test_downlink_requires_spice(self):
+        with pytest.raises(ConfigError, match="spice"):
+            validate_scenario(
+                _comm_config(
+                    [
+                        {
+                            "name": "gs",
+                            "type": "downlink",
+                            "transmitter": "a",
+                            "ground_station": {"lat": 0.0, "long": 0.0},
+                        }
+                    ]
+                )
+            )
+
+    def test_comm_link_rejects_unknown_spacecraft(self):
+        with pytest.raises(ConfigError, match="is not a"):
+            validate_scenario(
+                _comm_config(
+                    [
+                        {
+                            "name": "x",
+                            "type": "crosslink",
+                            "transmitter": "a",
+                            "receiver": "nobody",
+                        }
+                    ]
+                )
+            )
+
+    def test_comm_link_rejects_self_loop(self):
+        with pytest.raises(ConfigError, match="must differ"):
+            validate_scenario(
+                _comm_config(
+                    [
+                        {
+                            "name": "x",
+                            "type": "crosslink",
+                            "transmitter": "a",
+                            "receiver": "a",
+                        }
+                    ]
                 )
             )

@@ -13,6 +13,7 @@ from __future__ import annotations
 from pydantic import Field, PrivateAttr, model_validator
 
 from bskforge.schema.base import ScenarioModel
+from bskforge.schema.comm import CommLinkConfig
 from bskforge.schema.custom import CustomSection
 from bskforge.schema.environment import EnvironmentSection
 from bskforge.schema.logging import LoggingSection
@@ -35,6 +36,7 @@ class ScenarioConfig(ScenarioModel):
     world: WorldSection = Field(default_factory=WorldSection)
     environment: EnvironmentSection | None = None
     spacecraft: list[SpacecraftSection] = Field(default_factory=list)
+    comm_links: list[CommLinkConfig] = Field(default_factory=list)
     logging: LoggingSection = Field(default_factory=LoggingSection)
     visualization: VisualizationSection = Field(default_factory=VisualizationSection)
     custom: CustomSection = Field(default_factory=CustomSection)
@@ -93,6 +95,30 @@ class ScenarioConfig(ScenarioModel):
                         f"{guid.type!r} needs SPICE ephemerides; add a "
                         "[world.spice] section"
                     )
+        link_names = [link.name for link in self.comm_links]
+        if len(link_names) != len(set(link_names)):
+            dupes = sorted({n for n in link_names if link_names.count(n) > 1})
+            raise ValueError(f"duplicate comm link names: {', '.join(dupes)}")
+        for link in self.comm_links:
+            if link.transmitter not in names:
+                raise ValueError(
+                    f"comm link {link.name!r}: transmitter {link.transmitter!r} "
+                    "is not a [[spacecraft]] name"
+                )
+            if link.type == "crosslink" and link.receiver not in names:
+                raise ValueError(
+                    f"comm link {link.name!r}: receiver {link.receiver!r} "
+                    "is not a [[spacecraft]] name"
+                )
+            if link.type == "crosslink" and link.transmitter == link.receiver:
+                raise ValueError(
+                    f"comm link {link.name!r}: transmitter and receiver must differ"
+                )
+            if link.type == "downlink" and not self.world.spice.enabled:
+                raise ValueError(
+                    f"comm link {link.name!r}: a ground station rides a "
+                    "rotating planet; add a [world.spice] section"
+                )
         if self.monte_carlo:
             raise ValueError(
                 "monte_carlo requires Phase 6; remove [monte_carlo] to run "

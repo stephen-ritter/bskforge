@@ -12,8 +12,9 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-_(nothing in flight — Phase 5 complete, see below; Phase 6 — fleets &
-operations: comms, formation FSW, Monte Carlo — is next)_
+Phase 6 — fleets & operations: comm links, formation flying wiring,
+Monte Carlo dispersions. Design pass on the Basilisk comm/formation
+modules in flight.
 
 ---
 
