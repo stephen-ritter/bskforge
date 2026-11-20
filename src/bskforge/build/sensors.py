@@ -6,15 +6,19 @@
 #
 #  See LICENSE for full terms.
 
-"""Sensor build phase: CSS, star tracker, IMU (mag/camera land later)."""
+"""Sensor build phase: CSS, star tracker, IMU, magnetometer, pinhole camera."""
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Callable
 from typing import Any
 
+import numpy as np
+from Basilisk.architecture import messaging
 from Basilisk.simulation import (
     coarseSunSensor,
+    ephemerisConverter,
     imuSensor,
     magnetometer,
     starTracker,
@@ -23,9 +27,10 @@ from Basilisk.utilities import macros
 
 from bskforge.build.context import SimContext, SpacecraftBundle
 from bskforge.build.environment import ECLIPSE, MAGNETIC_FIELD
-from bskforge.build.registry import apply_params, unsupported
+from bskforge.build.registry import apply_params
 from bskforge.errors import BuildError
 from bskforge.schema.sensors import (
+    CameraConfig,
     CoarseSunSensorConfig,
     ImuSensorConfig,
     MagnetometerConfig,
@@ -64,6 +69,8 @@ def _build_css(
     if eclipse_msg is not None:
         sensor.sunEclipseInMsg.subscribeTo(eclipse_msg)
     apply_params(sensor, cfg.params, f"sensor {sensor.ModelTag!r}")
+    if cfg.noise_sigma is not None:
+        _seed_rng(sensor)
     _finalize(ctx, bundle, sensor, cfg)
 
 
@@ -75,8 +82,15 @@ def _build_star_tracker(
     sensor = starTracker.StarTracker()
     sensor.ModelTag = f"{bundle.config.name}_{cfg.name}"
     sensor.dcm_CB = _sigma_to_dcm(cfg.sigma_SB)
+    noisy = False
     if cfg.noise_sigma is not None:
         sensor.setWalkBounds([cfg.noise_sigma] * 3)
+        noisy = True
+    if cfg.white_noise is not None:
+        sensor.PMatrix = np.eye(3) * cfg.white_noise
+        noisy = True
+    if noisy:
+        _seed_rng(sensor)
     sensor.scStateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
     apply_params(sensor, cfg.params, f"sensor {sensor.ModelTag!r}")
     _finalize(ctx, bundle, sensor, cfg)
@@ -90,6 +104,15 @@ def _build_imu(ctx: SimContext, bundle: SpacecraftBundle, cfg: ImuSensorConfig) 
     sensor.dcm_PB = _sigma_to_dcm(cfg.sigma_PB)
     sensor.senRotBias = list(cfg.gyro_bias)
     sensor.senTransBias = list(cfg.accel_bias)
+    noisy = False
+    if cfg.gyro_walk is not None:
+        sensor.setWalkBoundsGyro(list(cfg.gyro_walk))
+        noisy = True
+    if cfg.accel_walk is not None:
+        sensor.setWalkBoundsAccel(list(cfg.accel_walk))
+        noisy = True
+    if noisy:
+        _seed_rng(sensor)
     sensor.scStateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
     apply_params(sensor, cfg.params, f"sensor {sensor.ModelTag!r}")
     _finalize(ctx, bundle, sensor, cfg)
@@ -117,12 +140,67 @@ def _build_magnetometer(
     sensor.magInMsg.subscribeTo(field_msg)
     sensor.stateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
     apply_params(sensor, cfg.params, f"sensor {sensor.ModelTag!r}")
+    if cfg.noise_sigma is not None:
+        _seed_rng(sensor)
     _finalize(ctx, bundle, sensor, cfg)
 
 
 @sensor_builder("camera")
-def _build_camera(*args: Any, **kwargs: Any) -> None:
-    unsupported("Camera / imaging sensors", "Phase 3")(*args, **kwargs)
+def _build_camera(ctx: SimContext, bundle: SpacecraftBundle, cfg: CameraConfig) -> None:
+    """Instantiate a pinhole landmark camera pointed at a world body."""
+    try:
+        from Basilisk.simulation import pinholeCamera
+    except ImportError as err:  # pragma: no cover - depends on install extras
+        raise BuildError(
+            f"spacecraft {bundle.config.name!r}: camera {cfg.name!r} needs the "
+            "optional opNav Basilisk feature; install with pip install 'bsk[all]'"
+        ) from err
+    camera = pinholeCamera.PinholeCamera()
+    camera.ModelTag = f"{bundle.config.name}_{cfg.name}"
+    camera.dcm_CB = _sigma_to_dcm(cfg.sigma_CB)
+    camera.f = cfg.focal_length
+    camera.wPixel = cfg.pixel_size
+    camera.nxPixel = int(cfg.resolution[0])
+    camera.nyPixel = int(cfg.resolution[1])
+    if cfg.sun_mask_angle is not None:
+        camera.maskSun = cfg.sun_mask_angle
+    planet_msg = _target_state_msg(ctx, cfg)
+    converter = ephemerisConverter.EphemerisConverter()
+    converter.ModelTag = f"{camera.ModelTag}_ephemConverter"
+    converter.addSpiceInputMsg(planet_msg)
+    camera.ephemerisInMsg.subscribeTo(converter.ephemOutMsgs[0])
+    camera.scStateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
+    for landmark in cfg.landmarks:
+        camera.addLandmark(list(landmark.position), list(landmark.normal))
+    apply_params(camera, cfg.params, f"sensor {camera.ModelTag!r}")
+    if not camera.landmarkOutMsgs:
+        raise BuildError(
+            f"spacecraft {bundle.config.name!r}: camera {cfg.name!r} needs at "
+            "least one landmark (landmarks = [{{position = [...], ...}}])"
+        )
+    ctx.add_dyn(converter)
+    ctx.register_tag(converter.ModelTag, converter)
+    ctx.add_dyn(camera)
+    ctx.register_tag(camera.ModelTag, camera)
+    for index, msg in enumerate(camera.landmarkOutMsgs):
+        key = cfg.name if index == 0 else f"{cfg.name}_{index + 1}"
+        bundle.sensor_msgs[key] = (msg, cfg.recorder)
+
+
+def _target_state_msg(ctx: SimContext, cfg: CameraConfig) -> Any:
+    """Resolve the camera target's live ephemeris message from ``[world]``.
+
+    Landmark lighting needs the target's real position relative to the sun,
+    so the camera requires ``[world.spice]`` ephemerides for its target.
+    """
+    target = (cfg.target or ctx.config.world.central_body).lower()
+    msg = ctx.planet_state_msgs.get(target)
+    if msg is None:
+        raise BuildError(
+            f"camera target {target!r} has no SPICE ephemeris: enable "
+            "[world.spice] and list the target under [[world.gravities]]"
+        )
+    return msg
 
 
 def _finalize(ctx: SimContext, bundle: SpacecraftBundle, sensor: Any, cfg: Any) -> None:
@@ -131,6 +209,46 @@ def _finalize(ctx: SimContext, bundle: SpacecraftBundle, sensor: Any, cfg: Any) 
     ctx.register_tag(sensor.ModelTag, sensor)
     out_msg = _sensor_output_message(sensor, cfg.type)
     bundle.sensor_msgs[cfg.name] = (out_msg, cfg.recorder)
+
+
+def build_css_constellations(ctx: SimContext, bundle: SpacecraftBundle) -> None:
+    """Group configured CSS sensors into aggregated sunline constellations."""
+    for cluster_cfg in bundle.config.css_constellations:
+        constellation = coarseSunSensor.CSSConstellation()
+        constellation.ModelTag = f"{bundle.config.name}_cssConst_{cluster_cfg.name}"
+        units = []
+        for member in cluster_cfg.members:
+            sensor = ctx.modules_by_tag.get(f"{bundle.config.name}_{member}")
+            if sensor is None or not hasattr(sensor, "cssDataOutMsg"):
+                raise BuildError(
+                    f"spacecraft {bundle.config.name!r}: css_constellation "
+                    f"{cluster_cfg.name!r} member {member!r} is not a built "
+                    "coarse sun sensor"
+                )
+            constellation.appendCSS(sensor)
+            n_hat = np.asarray(list(sensor.nHat_B), dtype=float).reshape(-1)
+            n_hat = n_hat / np.linalg.norm(n_hat)
+            units.append(
+                messaging.CSSUnitConfigMsgPayload(
+                    nHat_B=[float(component) for component in n_hat],
+                    CBias=1.0,
+                )
+            )
+        const_msg = messaging.CSSConfigMsg()
+        const_msg.write(messaging.CSSConfigMsgPayload(nCSS=len(units), cssVals=units))
+        ctx.add_dyn(constellation)
+        ctx.register_tag(constellation.ModelTag, constellation)
+        bundle.css_clusters[cluster_cfg.name] = (constellation, const_msg)
+
+
+def _seed_rng(sensor: Any) -> None:
+    """Enable a sensor's internal noise generator with a stable seed.
+
+    Basilisk sensor modules only apply noise when ``RNGSeed`` is non-zero;
+    seeding from the ModelTag keeps runs reproducible across processes.
+    """
+    if sensor.RNGSeed == 0:
+        sensor.RNGSeed = zlib.crc32(sensor.ModelTag.encode()) % 2**31
 
 
 def _sensor_output_message(sensor: Any, type_name: str) -> Any:
@@ -146,7 +264,6 @@ def _sensor_output_message(sensor: Any, type_name: str) -> Any:
 
 def _sigma_to_dcm(sigma: list[float]) -> Any:
     """Convert an MRP orientation to a Basilisk Eigen 3x3 DCM."""
-    import numpy as np
     from Basilisk.utilities import RigidBodyKinematics as rbk
     from Basilisk.utilities import simHelpers
 

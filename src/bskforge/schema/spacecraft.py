@@ -25,7 +25,7 @@ from bskforge.schema.environment import EnvironmentSection
 from bskforge.schema.fsw import FswSection
 from bskforge.schema.orbit import OrbitConfig
 from bskforge.schema.recorder import RecorderConfig
-from bskforge.schema.sensors import SensorConfig
+from bskforge.schema.sensors import CssConstellationConfig, SensorConfig
 from bskforge.schema.visualization import SpacecraftViz
 
 
@@ -92,8 +92,9 @@ class SpacecraftSection(ScenarioModel):
         orbit: Translational initial state.
         attitude: Rotational initial state.
         sensors: Sensor payload list.
+        css_constellations: CSS groups feeding sunline estimators.
         effectors: Control effector list.
-        disturbances: Environmental disturbance effectors (Phase 2).
+        disturbances: Environmental disturbance effectors.
         fsw: Flight-software stack.
         environment: Per-vehicle override of the global ``[environment]``.
         logging: Recorder switches for this vehicle.
@@ -105,6 +106,7 @@ class SpacecraftSection(ScenarioModel):
     orbit: OrbitConfig | None = None
     attitude: AttitudeConfig | None = None
     sensors: list[SensorConfig] = Field(default_factory=list)
+    css_constellations: list[CssConstellationConfig] = Field(default_factory=list)
     effectors: list[EffectorConfig] = Field(default_factory=list)
     disturbances: list[DisturbanceConfig] = Field(default_factory=list)
     fsw: FswSection | None = None
@@ -124,6 +126,20 @@ class SpacecraftSection(ScenarioModel):
                 raise ValueError(
                     f"duplicate component names in spacecraft "
                     f"{self.name!r}: {', '.join(sorted(dupes))}"
+                )
+        css_names = {s.name for s in self.sensors if s.type == "coarseSunSensor"}
+        cluster_names = [c.name for c in self.css_constellations]
+        if len(cluster_names) != len(set(cluster_names)):
+            raise ValueError(
+                f"duplicate css_constellations names in spacecraft {self.name!r}"
+            )
+        for cluster in self.css_constellations:
+            unknown = [m for m in cluster.members if m not in css_names]
+            if unknown:
+                raise ValueError(
+                    f"spacecraft {self.name!r}: css_constellation "
+                    f"{cluster.name!r} references unknown coarse sun "
+                    f"sensors: {', '.join(unknown)}"
                 )
         return self
 

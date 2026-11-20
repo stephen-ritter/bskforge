@@ -1,0 +1,154 @@
+# Estimation and optical navigation: a CSS-cluster WLS sunline estimator,
+# a star-tracker inertial UKF closing the loop on reaction-wheel attitude
+# control, and a pinhole landmark camera.
+#
+# zero_base = "sun" puts the inertial origin at the sun, the frame the
+# pinhole camera's lighting model expects; spacecraft states are recorded
+# heliocentrically (Basilisk keeps the orbit around the central body).
+
+[simulation]
+name = "Estimation and opnav"
+duration = 120.0
+
+[simulation.dt]
+dynamics = 0.1
+fsw = 1.0
+
+[world]
+central_body = "earth"
+epoch = "2026-03-20 12:05:06.0 (UTC)"
+
+[world.spice]
+enabled = true
+zero_base = "sun"            # required by landmark-camera illumination
+
+# -- vehicle 1: sunline estimation + landmark imaging --------------------
+[[spacecraft]]
+name = "nadir"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+
+# octahedral CSS cluster: the sun is always inside some sensor's 60 deg cone
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "cpx"
+boresight_B = [1.0, 0.0, 0.0]
+fov_deg = 60.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "cmx"
+boresight_B = [-1.0, 0.0, 0.0]
+fov_deg = 60.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "cpy"
+boresight_B = [0.0, 1.0, 0.0]
+fov_deg = 60.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "cmy"
+boresight_B = [0.0, -1.0, 0.0]
+fov_deg = 60.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "cpz"
+boresight_B = [0.0, 0.0, 1.0]
+fov_deg = 60.0
+
+[[spacecraft.sensors]]
+type = "coarseSunSensor"
+name = "cmz"
+boresight_B = [0.0, 0.0, -1.0]
+fov_deg = 60.0
+
+[[spacecraft.sensors]]
+type = "camera"
+name = "lmk"
+sigma_CB = [0.0, -0.41421356, 0.0]   # boresight along body -X (nadir at t0)
+focal_length = 0.025                 # -> ~25 deg horizontal field of view
+pixel_size = 1.1e-5
+resolution = [1024, 1024]
+
+# one landmark under the sub-solar point at epoch
+[[spacecraft.sensors.landmarks]]
+position = [6.378e6, 0.0, 0.0]
+normal = [1.0, 0.0, 0.0]
+
+[[spacecraft.css_constellations]]
+name = "array"
+members = ["cpx", "cmx", "cpy", "cmy", "cpz", "cmz"]
+
+[spacecraft.fsw.estimator]
+type = "cssWlsEst"
+cluster = "array"
+
+# -- vehicle 2: UKF-filtered attitude control -----------------------------
+[[spacecraft]]
+name = "att"
+
+[spacecraft.hub]
+mass = 750.0
+
+[spacecraft.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.2e6
+
+[spacecraft.attitude.initial]
+sigma_BN = [0.3, -0.2, 0.1]
+omega_BN_B = [0.002, -0.004, 0.001]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st1"
+white_noise = 1.0e-3
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st2"
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.01
+
+[[spacecraft.effectors.wheels]]
+direction_B = [1.0, 0.0, 0.0]
+max_torque = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 1.0, 0.0]
+max_torque = 0.2
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0.0, 0.0, 1.0]
+max_torque = 0.2
+
+[spacecraft.fsw]
+[spacecraft.fsw.estimator]
+type = "inertialUKF"
+st_sensors = ["st1", "st2"]
+
+[spacecraft.fsw.guidance]
+type = "inertial3D"
+sigma_R0N = [0.0, 0.0, 0.0]
+
+[spacecraft.fsw.control]
+type = "mrpFeedback"
+k = 3.5
+p = 30.0
+ki = -1.0
+
+[spacecraft.fsw.allocation]
+type = "rwMotorTorque"

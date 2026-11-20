@@ -18,7 +18,7 @@ from bskforge.build.disturbances import build_disturbances
 from bskforge.build.effectors import EFFECTOR_BUILDERS
 from bskforge.build.fsw import build_fsw
 from bskforge.build.registry import unsupported
-from bskforge.build.sensors import SENSOR_BUILDERS
+from bskforge.build.sensors import SENSOR_BUILDERS, build_css_constellations
 from bskforge.build.spacecraft import build_vehicle
 from bskforge.build.world import build_world
 from bskforge.errors import UnsupportedError
@@ -77,6 +77,7 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
                     f"{', '.join(sorted(SENSOR_BUILDERS))}"
                 )
             sensor_builder(ctx, bundle, sensor_cfg)
+        build_css_constellations(ctx, bundle)
         build_fsw(ctx, bundle)
 
     custom.build_custom_modules(ctx)

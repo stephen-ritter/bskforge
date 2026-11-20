@@ -76,24 +76,24 @@ Every Basilisk object created by the domain builders also accepts a free-form
 module at build time (with did-you-mean errors), so new upstream parameters
 need no bskforge changes.
 
-## Status (Phases 1–2: core + environment fidelity)
+## Status (Phases 1–3: core + environment + sensors/estimation)
 
 Implemented: TOML loading with `extends` inheritance and friendly errors,
 SPICE-driven worlds (presets, custom point masses, spherical harmonics,
-third-body perturbations), hub + orbit/attitude initial state,
-reaction-wheel effectors, CSS / star tracker / IMU / magnetometer sensors,
-magnetic field (dipole, WMM), atmosphere (exponential, MSIS), penumbra
-eclipse, gravity-gradient / drag / SRP disturbances (cannonball and faceted),
-`inertial3D` → `simpleNav`/`attTrackingError` → `mrpFeedback` →
-`rwMotorTorque` FSW stacks, multi-spacecraft scenarios, message recorders
-with CSV/parquet/npz export, Vizard visualization hooks, and the `[custom]`
-escape hatch.
+third-body perturbations, sun-centered frames), hub + orbit/attitude initial
+state, reaction-wheel effectors, CSS / star tracker / IMU / magnetometer /
+pinhole landmark-camera sensors, CSS constellations, magnetic field (dipole,
+WMM), atmosphere (exponential, MSIS), penumbra eclipse, gravity-gradient /
+drag / SRP disturbances (cannonball and faceted), `inertial3D` →
+`simpleNav`/`cssWlsEst`/`inertialUKF`/`sunlineSuKF` → `attTrackingError` →
+`mrpFeedback` → `rwMotorTorque` FSW stacks, multi-spacecraft scenarios,
+message recorders with CSV/parquet/npz export, Vizard visualization hooks,
+and the `[custom]` escape hatch.
 
-Pending: imaging sensors and Kalman-filter estimators (Phase 3); thrusters,
-MTB and momentum management (Phase 4); extended guidance/control laws
-(Phase 5); comms, formation FSW and Monte Carlo (Phase 6). Configuring any
-pending block fails with a clear phase pointer instead of silently ignoring
-it.
+Pending: thrusters, MTB and momentum management (Phase 4); extended
+guidance/control laws (Phase 5); comms, formation FSW and Monte Carlo
+(Phase 6). Configuring any pending block fails with a clear phase pointer
+instead of silently ignoring it.
 
 Known Basilisk behavior: recorder samples taken at `t = 0` capture messages
 before their writer modules first execute (Basilisk logs them as

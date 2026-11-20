@@ -12,7 +12,7 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-_(nothing in flight — Phase 2 complete, see below)_
+_(nothing in flight — Phase 3 complete, see below)_
 
 ---
 
@@ -34,10 +34,7 @@ _(nothing in flight — Phase 2 complete, see below)_
 - [ ] Solar-flux override: no consumer module in the 2.12 wheel; remains an
       explicit `UnsupportedError`
 
-### Phase 3 — Sensors & estimation
-- [ ] Sensor noise polish (`setAMatrix`, ST sampling period, IMU drifting bias)
-- [ ] Estimators: `InertialUKF`, `CSSEst`, `sunlineSuKF`
-- [ ] Camera (+opnav guard via `Basilisk.hasBuildFeature`)
+### Phase 3 — Sensors & estimation  ✅ (see Completed)
 
 ### Phase 4 — Effector breadth
 - [ ] Thrusters (`simIncludeThruster`) + `thrForceMapping`, firing (Schmitt/Round),
@@ -68,6 +65,44 @@ _(nothing in flight — Phase 2 complete, see below)_
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 3: sensors & estimation
+Validated end-to-end against installed **Basilisk 2.12.2** (new example
+`examples/estimation_and_opnav.toml` + 9 new tests, 51 total passing).
+- [x] Pinhole landmark camera (`pinholeCamera`): `focal_length` /
+      `pixel_size` / `resolution` optics knobs (Basilisk's `Reset()` derives
+      the FOV), `sigma_CB` mounting, `landmarks` (position + normal in the
+      target body-fixed frame), `sun_mask_angle`; per-landmark output
+      messages recorded (`{cam}`, `{cam}_2`, … with `pL`, `isVisible`, …).
+      Lighting uses the target's origin-relative position, so the camera
+      requires SPICE ephemerides **and** a sun-centered inertial frame:
+      new `[world.spice] zero_base = "sun"` knob sets `SpiceInterface.zeroBase`.
+- [x] CSS constellations: `[[spacecraft.css_constellations]]` groups named
+      CSS units into a `CSSConstellation` with a written `CSSConfigMsg`
+      (`CBias = 1.0` — the config default of 0 would zero measurements);
+      unknown members rejected at validation, unknown clusters at build with
+      the available-cluster list.
+- [x] Estimators (`[spacecraft.fsw.estimator]`): `cssWlsEst` (`use_weights`),
+      `sunlineSuKF` (`q_obs`, `output_sunline`) and `inertialUKF` — ST-fused
+      sigma-point filter with sane defaults (module defaults of 0 give NaN;
+      α/β/κ/covar/stateInit presets, per-ST measurement-noise diagonal).
+      The ST→UKF gap (STSensorMsg quaternion vs STAttMsg MRP) is bridged by
+      a small Python `SysModel` (`EP2MRP`, skips not-yet-written sensors);
+      the module's mandatory RW/gyro ports subscribe to written-zero
+      dummy messages when no wheels are configured.
+- [x] Estimator output auto-recorded as `{sc}.nav_state` (MRP, rate, sun
+      pointer per estimator outputs).
+- [x] Sensor noise polish: ST `white_noise` (seeded RNG — `RNGSeed = crc32`
+      of the model tag, since Basilisk refuses noise without a non-zero
+      seed), IMU `gyro_bias`/`gyro_walk`/`accel_walk`.
+- [x] Physics tests: cssWlsEst sunline = truth sun direction (unit norm),
+      inertialUKF converges to truth attitude (< 1e−3), landmark camera
+      observes a surface point (pixels inside the array), ST noise scatters
+      around truth, IMU bias appears in gyro output, cluster/SPICE guards.
+- Notes: un-torqued-limited RW loops diverge — set per-wheel
+  `max_torque`; the `camera` type stays guarded when Basilisk lacks the
+  opnav build feature (`hasBuildFeature("opNav")` guards future opnav
+  modules; pinhole itself needs no feature).
 
 ### 2026-11-20 — Phase 2: environment fidelity
 Validated end-to-end against installed **Basilisk 2.12.2** (new example
@@ -188,8 +223,8 @@ Legend: ❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end
 | Magnetic field | `magneticFieldWMM`, `magneticFieldCenteredDipole` | ✅ |
 | Atmosphere | `ExponentialAtmosphere`, `MsisAtmosphere` | ✅ (2.12 has no wind model) |
 | Eclipse | `eclipse` | ✅ |
-| Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer` ✅ · camera ❌ | 🔧 |
-| Estimation | `simpleNav` ✅ · `InertialUKF`, `CSSEst` ❌ | 🔧 |
+| Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer`, `pinholeCamera` | ✅ |
+| Estimation | `simpleNav`, `InertialUKF`, `cssWlsEst`, `sunlineSuKF` | ✅ |
 | Att guidance | `inertial3D` ✅ · `velocityPoint`, `hillPoint` ❌ | 🔧 |
 | Att control | `mrpFeedback` ✅ · `mrpPD`, steering laws ❌ | 🔧 |
 | Att effector iface | `rwMotorTorque` ✅ · `thrForceMapping` ❌ | 🔧 |

@@ -56,6 +56,8 @@ class SpacecraftBundle:
     resolved_env: Any = None
     fsw: dict[str, Any] = field(default_factory=dict)
     sensor_msgs: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    css_clusters: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    estimator_msg: Any = None
     recorders: list[RecorderSpec] = field(default_factory=list)
 
 

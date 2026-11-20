@@ -46,7 +46,60 @@ class SimpleNavEstimator(PassthroughModel):
     type: Literal["simpleNav"] = "simpleNav"
 
 
-EstimatorConfig = Annotated[SimpleNavEstimator, Field(discriminator="type")]
+class InertialUkfEstimator(PassthroughModel):
+    """Star-tracker inertial unscented Kalman filter: ``type = "inertialUKF"``.
+
+    Estimates attitude and body rate from the vehicle's star trackers
+    (propagating between measurements with the vehicle inertia).
+
+    Attributes:
+        st_sensors: Star-tracker sensor names to fuse; all when empty.
+        process_noise_att: Attitude process-noise sigma [rad].
+        process_noise_rate: Body-rate process-noise sigma [rad/s].
+        covar_init_att: Initial attitude covariance (variance).
+        covar_init_rate: Initial rate covariance (variance).
+        switch_mag: Measurement switch threshold on the MRP error norm.
+    """
+
+    type: Literal["inertialUKF"] = "inertialUKF"
+    st_sensors: list[str] = Field(default_factory=list)
+    measurement_noise: float = Field(
+        0.00017, gt=0, description="ST attitude measurement sigma [rad]"
+    )
+    process_noise_att: float = Field(0.0017, gt=0)
+    process_noise_rate: float = Field(0.00017, gt=0)
+    covar_init_att: float = Field(0.04, gt=0)
+    covar_init_rate: float = Field(0.0001, gt=0)
+    switch_mag: float = Field(1.2, gt=0)
+    alpha: float = Field(0.02, gt=0, description="UKF spread parameter")
+    beta: float = Field(2.0, gt=0, description="UKF prior distribution knob")
+    kappa: float = Field(0.0, ge=0, description="UKF secondary scaling")
+
+
+class CssWlsEstEstimator(PassthroughModel):
+    """CSS weighted-least-squares sunline estimator: ``type = "cssWlsEst"``."""
+
+    type: Literal["cssWlsEst"] = "cssWlsEst"
+    cluster: str = "css"
+    use_weights: bool | None = None
+
+
+class SunlineSuKFEstimator(PassthroughModel):
+    """CSS square-root UKF sunline estimator: ``type = "sunlineSuKF"``."""
+
+    type: Literal["sunlineSuKF"] = "sunlineSuKF"
+    cluster: str = "css"
+    q_obs: float | None = Field(None, gt=0, description="Measurement noise")
+    output_sunline: bool = True
+
+
+EstimatorConfig = Annotated[
+    SimpleNavEstimator
+    | InertialUkfEstimator
+    | CssWlsEstEstimator
+    | SunlineSuKFEstimator,
+    Field(discriminator="type"),
+]
 
 
 # --- Control ---------------------------------------------------------------

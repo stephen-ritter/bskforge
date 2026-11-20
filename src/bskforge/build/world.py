@@ -128,7 +128,11 @@ def _build_spice(ctx: SimContext, central_key: str) -> None:
     if kernel_enums is not None:
         kwargs["spiceKernelFileNames"] = kernel_enums
     spice = ctx.grav_factory.createSpiceInterface(**kwargs)
-    spice.zeroBase = central_key.capitalize()
+    spice.zeroBase = (
+        world.spice.zero_base.capitalize()
+        if world.spice.zero_base
+        else central_key.capitalize()
+    )
     ctx.spice = spice
     ctx.add_dyn(spice)
 

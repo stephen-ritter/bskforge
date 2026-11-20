@@ -53,6 +53,15 @@ def build_recorders(ctx: SimContext) -> None:
         for sensor_name, (msg, rec_cfg) in bundle.sensor_msgs.items():
             _record(ctx, bundle, f"{name}.{sensor_name}", msg, rec_cfg)
 
+        if bundle.estimator_msg is not None:
+            _record(
+                ctx,
+                bundle,
+                f"{name}.nav_state",
+                bundle.estimator_msg,
+                RecorderConfig(),
+            )
+
 
 def _record(
     ctx: SimContext,

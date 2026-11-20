@@ -97,10 +97,14 @@ class SpiceConfig(ScenarioModel):
         kernels: Basilisk ``DataFile.EphemerisData`` keys
             (e.g. ``"de430"``, ``"naif0012"``); empty uses the standard
             default kernel set.
+        zero_base: Body at the inertial origin; defaults to the central
+            body. Landmark cameras need ``"sun"`` (their sun line is
+            derived from the target's origin-relative position).
     """
 
     enabled: bool = False
     kernels: list[str] = Field(default_factory=list)
+    zero_base: str | None = Field(None, description="Origin body name")
 
 
 class WorldSection(ScenarioModel):

@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from bskforge.errors import BuildError, UnsupportedError
+from bskforge.errors import BuildError, ConfigError, UnsupportedError
 from bskforge.loader import load_scenario, validate_scenario
 from bskforge.runner import ScenarioRunner
 
@@ -224,20 +224,24 @@ class TestRun:
                 "earth_environment.toml",
                 {"sc1.state", "sc1.tam", "sc1.css1", "sc1.st", "sc1.imu"},
             ),
+            (
+                "estimation_and_opnav.toml",
+                {
+                    "nadir.state",
+                    "nadir.nav_state",
+                    "nadir.lmk",
+                    "att.nav_state",
+                    "att.control_torque",
+                },
+            ),
         ],
     )
     def test_examples_run_short_duration(self, example, expected_streams):
         config = load_scenario(EXAMPLES / example)
         result = ScenarioRunner(config).run(duration=30.0)
         assert expected_streams.issubset(result.frames)
-        assert (
-            len(
-                result.frames[
-                    "sc1.state" if "sc1.state" in result.frames else "chief.state"
-                ]
-            )
-            > 10
-        )
+        state_stream = next(k for k in sorted(result.frames) if k.endswith(".state"))
+        assert len(result.frames[state_stream]) > 10
 
     def test_attitude_converges_with_rw_control(self):
         config = load_scenario(EXAMPLES / "single_sat_leo.toml")
@@ -368,3 +372,237 @@ class TestRun:
         files = sorted(p.name for p in tmp_path.glob("*.csv"))
         assert "sc1.state.csv" in files
         assert result.exported_files
+
+
+def _css_cluster(name: str) -> dict:
+    """Eight-pyramid CSS cluster sensitive to a sun line along +X."""
+    boresights = [
+        [0.7071, -0.5, 0.5],
+        [0.7071, -0.5, -0.5],
+        [0.7071, 0.5, -0.5],
+        [0.7071, 0.5, 0.5],
+        [-0.7071, 0.0, 0.7071],
+        [-0.7071, 0.7071, 0.0],
+        [-0.7071, 0.0, -0.7071],
+        [-0.7071, -0.7071, 0.0],
+    ]
+    return {
+        "name": name,
+        "orbit": {"type": "elements", "elements": {"a": 7000e3}},
+        "sensors": [
+            {
+                "type": "coarseSunSensor",
+                "name": f"c{i}",
+                "boresight_B": b,
+                "fov_deg": 50,
+            }
+            for i, b in enumerate(boresights)
+        ],
+        "css_constellations": [
+            {"name": "group", "members": [f"c{i}" for i in range(8)]}
+        ],
+    }
+
+
+class TestEstimationAndCameras:
+    def test_css_wls_estimator_recovers_sun_direction(self):
+        config = validate_scenario(
+            {
+                "simulation": {"name": "wls", "duration": 60.0},
+                "spacecraft": [
+                    {
+                        **_css_cluster("sc1"),
+                        "fsw": {"estimator": {"type": "cssWlsEst", "cluster": "group"}},
+                    }
+                ],
+            }
+        )
+        result = ScenarioRunner(config).run(duration=60.0)
+        sun = result.frames["sc1.nav_state"][
+            ["vehSunPntBdy[0]", "vehSunPntBdy[1]", "vehSunPntBdy[2]"]
+        ].to_numpy()[-1]
+        assert np.linalg.norm(sun) == pytest.approx(1.0, abs=1e-3)
+        assert np.linalg.norm(sun - np.array([1.0, 0.0, 0.0])) < 0.1
+
+    def test_inertial_ukf_converges_to_truth(self):
+        config = validate_scenario(
+            {
+                "simulation": {"name": "ukf", "duration": 60.0},
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "orbit": {"type": "elements", "elements": {"a": 7200e3}},
+                        "attitude": {
+                            "initial": {
+                                "sigma_BN": [0.1, -0.2, 0.05],
+                                "omega_BN_B": [0.001, -0.01, 0.03],
+                            }
+                        },
+                        "sensors": [
+                            {"type": "starTracker", "name": "st1", "white_noise": 1e-3},
+                            {"type": "starTracker", "name": "st2"},
+                        ],
+                        "fsw": {"estimator": {"type": "inertialUKF"}},
+                    }
+                ],
+            }
+        )
+        result = ScenarioRunner(config).run(duration=60.0)
+        cols = ["sigma_BN[0]", "sigma_BN[1]", "sigma_BN[2]"]
+        est = result.frames["sc1.nav_state"][cols].to_numpy()
+        truth = result.frames["sc1.state"][cols].to_numpy()
+        assert np.isfinite(est).all()
+        assert np.linalg.norm(est[-1]) > 1e-2, "filter never left its zero init"
+        assert np.linalg.norm(est[-1] - truth[-1]) < 1e-3
+
+    def test_inertial_ukf_requires_star_tracker(self):
+        config = validate_scenario(
+            {
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "fsw": {"estimator": {"type": "inertialUKF"}},
+                    }
+                ]
+            }
+        )
+        with pytest.raises(BuildError, match="starTracker"):
+            ScenarioRunner(config).build()
+
+    def test_estimator_unknown_cluster_names_available(self):
+        config = validate_scenario(
+            {
+                "spacecraft": [
+                    {
+                        **_css_cluster("sc1"),
+                        "fsw": {"estimator": {"type": "cssWlsEst", "cluster": "nope"}},
+                    }
+                ]
+            }
+        )
+        with pytest.raises(BuildError, match="css_constellation"):
+            ScenarioRunner(config).build()
+
+    def test_camera_observes_surface_landmark(self):
+        config = validate_scenario(
+            {
+                "simulation": {"name": "opnav", "duration": 30.0},
+                "world": {
+                    "epoch": "2026-03-20 12:05:06.0 (UTC)",
+                    "spice": {"enabled": True, "zero_base": "sun"},
+                },
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "orbit": {"type": "elements", "elements": {"a": 7000e3}},
+                        "sensors": [
+                            {
+                                "type": "camera",
+                                "name": "cam",
+                                "sigma_CB": [0.0, -0.41421356, 0.0],
+                                "landmarks": [
+                                    {
+                                        "position": [6378e3, 0.0, 0.0],
+                                        "normal": [1.0, 0.0, 0.0],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        result = ScenarioRunner(config).run(duration=30.0)
+        df = result.frames["sc1.cam"]
+        visible = df["isVisible"].to_numpy() > 0
+        assert visible.sum() >= 1, "landmark never entered the field of view"
+        pixels = df.loc[visible, ["pL[0]", "pL[1]"]].to_numpy()
+        assert (np.abs(pixels) <= 1024).all()
+
+    def test_camera_requires_spice_target(self):
+        config = validate_scenario(
+            {
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "sensors": [
+                            {
+                                "type": "camera",
+                                "name": "cam",
+                                "landmarks": [{"position": [6378e3, 0.0, 0.0]}],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        with pytest.raises(BuildError, match="SPICE"):
+            ScenarioRunner(config).build()
+
+    def test_star_tracker_white_noise_scatters_around_truth(self):
+        config = validate_scenario(
+            {
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "sensors": [
+                            {"type": "starTracker", "name": "st", "white_noise": 0.01}
+                        ],
+                    }
+                ]
+            }
+        )
+        result = ScenarioRunner(config).run(duration=30.0)
+        sensed = result.frames["sc1.st"][
+            ["qInrtl2Case[0]", "qInrtl2Case[1]", "qInrtl2Case[2]", "qInrtl2Case[3]"]
+        ].to_numpy()
+        truth = result.frames["sc1.state"][
+            ["sigma_BN[0]", "sigma_BN[1]", "sigma_BN[2]"]
+        ].to_numpy()
+        from Basilisk.utilities import RigidBodyKinematics as rbk
+
+        truth_quat = np.array([rbk.MRP2EP(s) for s in truth[1:]])
+        err = np.linalg.norm(sensed[1:] - truth_quat, axis=1)
+        assert err.max() > 1e-6, "noise did not reach the sensor output"
+        assert err.max() < 0.05, f"noise too large: {err.max()}"
+
+    def test_imu_bias_shows_in_gyro_output(self):
+        config = validate_scenario(
+            {
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "attitude": {"initial": {"omega_BN_B": [0.01, 0.0, 0.0]}},
+                        "sensors": [
+                            {
+                                "type": "imuSensor",
+                                "name": "imu",
+                                "gyro_bias": [0.002, 0.0, 0.0],
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        result = ScenarioRunner(config).run(duration=10.0)
+        gyro = result.frames["sc1.imu"]["AngVelPlatform[0]"].to_numpy()
+        assert gyro[-1] == pytest.approx(0.012, abs=2e-3)
+
+    def test_css_cluster_member_must_be_a_css(self):
+        with pytest.raises(ConfigError, match="unknown coarse sun sensors"):
+            validate_scenario(
+                {
+                    "spacecraft": [
+                        {
+                            "name": "sc1",
+                            "sensors": [
+                                {"type": "coarseSunSensor", "name": "c1"},
+                                {"type": "starTracker", "name": "st"},
+                            ],
+                            "css_constellations": [
+                                {"name": "group", "members": ["c1", "st"]}
+                            ],
+                        }
+                    ]
+                }
+            )
