@@ -136,3 +136,133 @@ class TestExtends:
 def test_examples_validate(example: Path):
     config = load_scenario(example)
     assert config.spacecraft, f"{example.name} declares no spacecraft"
+
+
+class TestGeneratedReference:
+    """bskforge reference: schema-derived field documentation."""
+
+    def test_markdown_covers_sections_and_unions(self):
+        from bskforge.reference import generate_markdown
+
+        md = generate_markdown()
+        assert "# `bskforge` scenario format reference" in md
+        for heading in (
+            "## `[simulation]`",
+            "## `[[spacecraft]]`",
+            "## `[[comm_links]]` — `downlink`",
+            "## `[[formations]]`",
+            "## `[monte_carlo]`",
+            "### `[[spacecraft.effectors]]` — `reactionWheels`",
+        ):
+            assert heading in md, heading
+        # discriminated unions list their kinds, defaults are shown
+        assert "velocityPoint" in md
+        assert "orbit_elements" in md
+        assert "`600.0`" in md  # simulation.duration default
+        # tables shared by union variants are hoisted once
+        assert md.count("### `[[spacecraft.sensors]].recorder`") == 1
+        assert md.count("### `[[spacecraft.sensors]]` — ") == 5
+
+    def test_toml_template_lists_fields_with_defaults(self):
+        import tomllib
+
+        from bskforge.reference import generate_toml_template
+
+        template = generate_toml_template()
+        # every content line is a comment: the template itself is valid TOML
+        assert all(
+            line.lstrip().startswith("#") or not line.strip()
+            for line in template.splitlines()
+        )
+        tomllib.loads(template)
+        for needle in (
+            "# name = 'bskforge_scenario'",
+            "# duration = 600.0",
+            "# -- [[spacecraft.effectors]] --",
+            "one entry — reactionWheels",
+        ):
+            assert needle in template, needle
+
+
+class TestValidateCli:
+    """bskforge validate: summary output and did-you-mean hints."""
+
+    def _write(self, tmp_path, extra: str = "") -> Path:
+        text = (
+            """
+            [simulation]
+            name = "cli-demo"
+            duration = 30.0
+
+            [[spacecraft]]
+            name = "sc1"
+            """
+            + extra
+        )
+        path = tmp_path / "scenario.toml"
+        path.write_text(text.strip() + "\n")
+        return path
+
+    def test_validate_prints_subsystem_summary(self, tmp_path, capsys):
+        from bskforge.cli import main
+
+        path = self._write(
+            tmp_path,
+            """
+            [[spacecraft.effectors]]
+            type = "reactionWheels"
+            inertia = 0.001
+            [[spacecraft.effectors.wheels]]
+            direction_B = [1.0, 0.0, 0.0]
+
+            [spacecraft.fsw.control]
+            type = "mrpPD"
+
+            [monte_carlo]
+            runs = 2
+            """,
+        )
+        assert main(["validate", str(path)]) == 0
+        out = capsys.readouterr().out
+        assert "valid: 'cli-demo' — 1 spacecraft, 30 s" in out
+        assert "reactionWheels" in out
+        assert "fsw mrpPD" in out
+        assert "monte carlo: 2 runs" in out
+
+    def test_unknown_key_suggests_field(self, tmp_path, capsys):
+        from bskforge.cli import main
+
+        path = (
+            self._write(tmp_path)
+            .read_text()
+            .replace("duration = 30.0", "duratio = 30.0")
+        )
+        tmp_path.joinpath("scenario.toml").write_text(path)
+        assert main(["validate", str(tmp_path / "scenario.toml")]) == 1
+        err = capsys.readouterr().err
+        assert "unknown key 'duratio'" in err
+        assert "did you mean 'duration'" in err
+
+    def test_bad_discriminator_tag_suggests_kind(self, tmp_path, capsys):
+        from bskforge.cli import main
+
+        path = self._write(
+            tmp_path,
+            """
+            [[spacecraft.effectors]]
+            type = "reactionWheel"
+            inertia = 0.001
+            """,
+        )
+        assert main(["validate", str(path)]) == 1
+        err = capsys.readouterr().err
+        assert "did you mean 'reactionWheels'" in err
+
+    def test_reference_cli_writes_file(self, tmp_path, capsys):
+        from bskforge.cli import main
+
+        out = tmp_path / "REF.md"
+        assert main(["reference", "--out", str(out)]) == 0
+        assert "# `bskforge` scenario format reference" in out.read_text()
+        assert main(["reference", "--toml"]) == 0
+        assert "bskforge scenario template" in capsys.readouterr().out

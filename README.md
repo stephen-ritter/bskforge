@@ -14,8 +14,15 @@ bskforge run examples/single_sat_leo.toml
 bskforge mc examples/monte_carlo.toml    # [monte_carlo] dispersion campaign
 bskforge validate scenario.toml
 bskforge schema                    # dump the JSON schema of the scenario format
+bskforge reference                 # field-by-field format reference (generated)
 bskforge graph scenario.toml       # emit the Basilisk message-connection graph
 ```
+
+Every field, type and default of the scenario format is documented in
+[`REFERENCE.md`](REFERENCE.md), generated straight from the validating
+pydantic schema (`bskforge reference > REFERENCE.md`) — the docs cannot
+drift from the code. `bskforge reference --toml` prints a commented TOML
+skeleton of the whole format to start a new scenario from.
 
 ## Scenario format (v2)
 
@@ -77,7 +84,27 @@ Every Basilisk object created by the domain builders also accepts a free-form
 module at build time (with did-you-mean errors), so new upstream parameters
 need no bskforge changes.
 
-## Status (Phases 1–6: core + environment + sensors/estimation + effectors + FSW + fleets)
+## Examples
+
+Every example is executed by the test suite:
+
+| file | shows |
+| --- | --- |
+| `single_sat_leo.toml` | minimal orbit + reaction-wheel attitude control |
+| `single_sat_with_sensors.toml` | CSS constellation, star tracker, IMU logging |
+| `earth_environment.toml` | SPICE world, WMM/MSIS/eclipse, drag/SRP/gravity-gradient |
+| `estimation_and_opnav.toml` | CSS-cluster WLS + inertial UKF estimation, landmark camera |
+| `momentum_management.toml` | thruster and MTB momentum dumping, RW null-space |
+| `guidance_laws.toml` | `velocityPoint`/`hillPoint` guidance with rateServo/mrpPD |
+| `ground_pointing.toml` | `locationPointing` over a ground site (SPICE planet) |
+| `comm_links.toml` | ground-station downlink + crosslink RF link budgets |
+| `relay_chain.toml` | crosslink → downlink relay chain with formation states |
+| `formation_flying.toml` | barycenter + Hill-frame relative states |
+| `multi_sat_formation.toml` | two-vehicle chase scenario |
+| `monte_carlo.toml` | dispersed initial states (`bskforge mc`) |
+| `custom_escape_hatch.toml` | native Basilisk module wired in from TOML |
+
+## Status (Phases 1–7: core + environment + sensors/estimation + effectors + FSW + fleets + docs)
 
 Implemented: TOML loading with `extends` inheritance and friendly errors,
 SPICE-driven worlds (presets, custom point masses, spherical harmonics,
@@ -99,8 +126,8 @@ barycenter plus Hill-frame relative states), message recorders with
 CSV/parquet/npz export, Vizard visualization hooks, Monte Carlo
 dispersion campaigns (`bskforge mc`), and the `[custom]` escape hatch.
 
-Pending: Phase 7 polish. Configuring any pending block fails with a
-clear phase pointer instead of silently ignoring it.
+Every documented block fails loudly (never silently) when it references
+spacecraft, links or modules that do not exist.
 
 Known Basilisk behavior: recorder samples taken at `t = 0` capture messages
 before their writer modules first execute (Basilisk logs them as

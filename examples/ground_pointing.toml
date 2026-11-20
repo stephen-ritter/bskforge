@@ -1,0 +1,76 @@
+# Earth-pointing imager: locationPointing guidance over a fixed ground
+# site, closed by an MRP PD law on a three-wheel assembly.
+#
+# The spacecraft steers its `+z` body axis at Boulder, CO while the
+# star-tracker truth pass feeds the control loop. SPICE supplies the
+# rotating planet frame that keeps the target locked to the ground.
+
+[simulation]
+name = "ground-pointing"
+duration = 600.0
+
+[simulation.dt]
+dynamics = 0.5
+fsw = 1.0
+
+[world]
+central_body = "earth"
+epoch = "2026-01-01 00:00:00.0 TDB"
+
+[world.spice]
+enabled = true
+
+[[world.gravities]]
+name = "earth"
+central = true
+
+[[world.gravities]]
+name = "sun"
+
+[[spacecraft]]
+name = "imager"
+
+[spacecraft.hub]
+mass = 300.0
+[spacecraft.hub.inertia]
+ixx = 400.0
+iyy = 350.0
+izz = 300.0
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+e = 0.001
+i = 45.0
+
+[spacecraft.attitude.initial]
+# start roughly nadir-pointing (+z at Earth): ~163 deg about +z, so the
+# PD loop only has to chase the moving target, not perform a large slew
+sigma_BN = [0.02, -0.01, 0.95]
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.05
+[[spacecraft.effectors.wheels]]
+direction_B = [1, 0, 0]
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 1, 0]
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 0, 1]
+
+[[spacecraft.sensors]]
+type = "starTracker"
+name = "st"
+
+[spacecraft.fsw.guidance]
+type = "locationPointing"
+target_latlon = [40.0069, -105.2649, 1655.0]   # Boulder, CO
+point_axis_B = [0.0, 0.0, 1.0]
+scan_axis_B = [1.0, 0.0, 0.0]
+
+[spacecraft.fsw.estimator]
+type = "simpleNav"
+
+[spacecraft.fsw.control]
+type = "mrpPD"

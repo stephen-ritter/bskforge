@@ -6,7 +6,7 @@
 #
 #  See LICENSE for full terms.
 
-"""``bskforge`` command-line interface: run, validate, schema, graph."""
+"""``bskforge`` command-line interface: run, mc, validate, schema, reference, graph."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from pathlib import Path
 
 from bskforge import __version__
 from bskforge.errors import BskForgeError
+from bskforge.schema.root import ScenarioConfig
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,11 +71,90 @@ def _cmd_mc(args: argparse.Namespace) -> int:
     return 1 if result.failures else 0
 
 
+def _scenario_summary(config: ScenarioConfig) -> list[str]:
+    """Human-readable subsystem breakdown for ``validate`` output."""
+    world = config.world
+    n_grav = len(world.gravities)
+    lines = [
+        f"world: {world.central_body} | epoch {world.epoch or 'default'} | "
+        + (
+            f"{n_grav} gravit" + ("y" if n_grav == 1 else "ies")
+            if n_grav
+            else f"default {world.central_body} gravity"
+        )
+        + (" | SPICE" if world.spice.enabled else " | Kepler/analytic"),
+    ]
+    if config.environment is not None:
+        env = config.environment
+        env_bits = [
+            getattr(env.magnetic_field, "type", None),
+            getattr(env.atmosphere, "type", None),
+            (t := getattr(env.eclipse, "type", None)) and f"eclipse:{t}",
+        ]
+        lines.append("environment: " + " | ".join(str(b) for b in env_bits if b))
+    for sc in config.spacecraft:
+        fsw = sc.fsw
+        fsw_text = "fsw off"
+        if fsw is not None:
+            laws = [
+                fsw.guidance.type if fsw.guidance else None,
+                fsw.estimator.type if fsw.estimator else None,
+                fsw.control.type if fsw.control else None,
+            ]
+            fsw_text = "fsw " + ("/".join(p for p in laws if p) or "custom only")
+            if fsw.allocation is not None:
+                fsw_text += f" + {fsw.allocation.type}"
+        n_s = len(sc.sensors)
+        n_e = len(sc.effectors)
+        n_d = len(sc.disturbances)
+        lines.append(
+            f"vehicle {sc.name}: "
+            f"{n_s} sensor{'' if n_s == 1 else 's'} "
+            f"[{', '.join(sorted({s.type for s in sc.sensors})) or '—'}] | "
+            f"{n_e} effector{'' if n_e == 1 else 's'} "
+            f"[{', '.join(sorted({e.type for e in sc.effectors})) or '—'}] | "
+            f"{n_d} disturbance{'' if n_d == 1 else 's'} | {fsw_text}"
+        )
+    if config.comm_links:
+        lines.append(
+            "comm links: "
+            + ", ".join(f"{link.name} ({link.type})" for link in config.comm_links)
+        )
+    if config.formations:
+        lines.append(
+            "formations: "
+            + ", ".join(
+                f"{form.name} [{', '.join(form.members)}]" for form in config.formations
+            )
+        )
+    if config.monte_carlo is not None:
+        mc = config.monte_carlo
+        lines.append(
+            f"monte carlo: {mc.runs} runs | "
+            f"{len(mc.dispersions)} dispersion"
+            + ("s" if len(mc.dispersions) != 1 else "")
+            + " (used by `bskforge mc`)"
+        )
+    if config.custom.tasks or config.custom.modules or config.custom.connections:
+        custom = config.custom
+        lines.append(
+            f"custom: {len(custom.tasks)} task(s), {len(custom.modules)} "
+            f"module(s), {len(custom.connections)} connection(s), "
+            f"{len(custom.events)} event(s)"
+        )
+    return lines
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     from bskforge.loader import load_scenario
 
     config = load_scenario(args.scenario)
-    print(f"valid: {config.simulation.name!r} — {len(config.spacecraft)} spacecraft")
+    print(
+        f"valid: {config.simulation.name!r} — {len(config.spacecraft)} "
+        f"spacecraft, {config.simulation.duration:g} s"
+    )
+    for line in _scenario_summary(config):
+        print("  " + line)
     return 0
 
 
@@ -85,6 +165,18 @@ def _cmd_schema(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_reference(args: argparse.Namespace) -> int:
+    from bskforge.reference import generate_markdown, generate_toml_template
+
+    text = generate_toml_template() if args.toml else generate_markdown()
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"wrote {args.out}")
+    else:
+        print(text, end="")
+    return 0
+
+
 def _cmd_graph(args: argparse.Namespace) -> int:
     from bskforge.loader import load_scenario
     from bskforge.runner import ScenarioRunner
@@ -92,9 +184,15 @@ def _cmd_graph(args: argparse.Namespace) -> int:
     config = load_scenario(args.scenario)
     built = ScenarioRunner(config).build()
     dot = built.context.sim.GetMessageConnectionDot()
-    out = Path(args.out) if args.out else Path(args.scenario + ".messages.dot")
+    out = Path(args.out) if args.out else Path(str(args.scenario) + ".messages.dot")
     out.write_text(dot)
-    print(f"wrote {out}")
+    edges = sum(1 for line in dot.splitlines() if "->" in line)
+    modules = sum(1 for line in dot.splitlines() if "[label=" in line)
+    print(
+        f"graph: {out} — {modules} module(s), {edges} message connection(s)"
+        " (render with: dot -Tsvg -o graph.svg "
+        f"{out})"
+    )
     return 0
 
 
@@ -150,6 +248,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
     schema = sub.add_parser("schema", help="print the scenario JSON schema")
     schema.set_defaults(handler=_cmd_schema)
+
+    reference = sub.add_parser(
+        "reference",
+        help="print the generated scenario-format reference (Markdown)",
+    )
+    reference.add_argument(
+        "--toml",
+        action="store_true",
+        help="emit a commented TOML template instead of Markdown",
+    )
+    reference.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="write to this file instead of stdout",
+    )
+    reference.set_defaults(handler=_cmd_reference)
 
     graph = sub.add_parser(
         "graph", help="write the Basilisk message-connection graph (.dot)"

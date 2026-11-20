@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 import tomllib
 import typing
 from pathlib import Path
@@ -121,11 +122,49 @@ def _format_validation_error(
         if err["type"] == "extra_forbidden":
             unknown = str(err["loc"][-1])
             known = _known_keys_at(ScenarioConfig, data, err["loc"][:-1])
-            close = difflib.get_close_matches(unknown, known, n=1, cutoff=0.5)
-            hint = f" (did you mean {close[0]!r} near {location}?)" if close else ""
+            close = difflib.get_close_matches(unknown, known, n=2, cutoff=0.4)
+            hint = (
+                " (did you mean "
+                + " or ".join(f"{c!r}" for c in close)
+                + "? run `bskforge reference` for the full field list)"
+                if close
+                else ""
+            )
             message = f"unknown key {unknown!r}{hint}"
+        elif err["type"] == "union_tag_invalid" or err["type"] == "literal_error":
+            message = _with_value_hint(err)
         lines.append(f"  {location}: {message}")
     return "\n".join(lines)
+
+
+def _with_value_hint(err: Any) -> str:
+    """Append a did-you-mean to tag/enum mistakes ('Input tag X ...')."""
+    message = str(err["msg"])
+    found: str | None = None
+    candidates: list[str] = []
+    if err["type"] == "union_tag_invalid":
+        ctx = err.get("ctx") or {}
+        found = str(ctx.get("inputValue") or ctx.get("discriminatorValue") or "")
+        tags = ctx.get("expectedTags") or {}
+        candidates = sorted(tags) if isinstance(tags, dict) else [str(t) for t in tags]
+        if not candidates:
+            found_match = re.search(r"Input tag '([^']+)'", message)
+            tags_match = re.search(r"expected tags: (.+)$", message)
+            if found_match:
+                found = found_match.group(1)
+            if tags_match:
+                candidates = [
+                    t.strip().strip("'\"") for t in tags_match.group(1).split(",")
+                ]
+    elif err["type"] == "literal_error":
+        found = str(err.get("input", ""))
+        permitted = str((err.get("ctx") or {}).get("permitted", ""))
+        candidates = [p.strip().strip("'\"") for p in permitted.split(",") if p.strip()]
+    if found and candidates:
+        close = difflib.get_close_matches(str(found), candidates, n=1, cutoff=0.5)
+        if close:
+            message += f" (did you mean {close[0]!r}?)"
+    return message
 
 
 def _known_keys_at(

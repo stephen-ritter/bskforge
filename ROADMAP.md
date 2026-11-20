@@ -12,9 +12,8 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-_(nothing in flight — Phase 6 complete, see below; Phase 7 — polish &
-docs: generated TOML reference, example library sweep, UX pass — is
-next)_
+_(nothing in flight — all roadmap phases through Phase 7 complete;
+see Completed. The MuJoCo-scene stretch goal remains parked.)_
 
 ---
 
@@ -61,14 +60,40 @@ next)_
 
 _(MuJoCo scenes stays a stretch goal; parked with Phase 7)_
 
-### Phase 7 — Polish & docs
-- [ ] Generated TOML reference from the pydantic JSON schema
-- [ ] Expanded example library mirroring canonical Basilisk scenarios
-- [ ] `validate`/`graph` UX polish; error-message quality pass
+### Phase 7 — Polish & docs  ✅ (see Completed)
+- [x] Generated TOML reference from the pydantic JSON schema
+- [x] Expanded example library mirroring canonical Basilisk scenarios
+- [x] `validate`/`graph` UX polish; error-message quality pass
 
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 7: generated reference, example sweep, CLI UX
+Validated against installed **Basilisk 2.12.2** (new examples
+`examples/ground_pointing.toml`, `examples/relay_chain.toml`; 11 new
+tests, 103 total passing).
+- [x] `bskforge.reference` renders the schema itself: `generate_markdown()`
+      walks `ScenarioConfig.model_json_schema()` into a per-table field
+      reference (types, defaults, required marks, discriminated-union
+      `type ∈ {…}` sets, nested `[table]`/`[[table]]` subsections, tables
+      shared by union variants hoisted once); `generate_toml_template()`
+      emits a fully commented TOML skeleton that is itself valid TOML.
+- [x] `bskforge reference [--toml] [--out FILE]` subcommand; checked-in
+      `REFERENCE.md` regenerated from the live schema.
+- [x] New examples: `ground_pointing.toml` (locationPointing over Boulder
+      with SPICE planet rotation, star tracker + mrpPD wheel loop) and
+      `relay_chain.toml` (crosslink → downlink relay chain combining
+      `[[comm_links]]` and `[[formations]]`); both in the examples sweep.
+      `locationPointing` gained a physics test (ground-site tracking
+      error stays bounded under SPICE rotation).
+- [x] `validate` now prints a subsystem summary (world/SPICE, environment,
+      per-vehicle sensor/effector/disturbance/FSW breakdown, comm links,
+      formations, monte carlo, custom counts).
+- [x] Error-message quality pass: did-you-mean suggestions for unknown
+      keys (now with two candidates + a pointer to `bskforge reference`)
+      and for bad discriminator tags (`reactionWheel` → `reactionWheels`).
+- [x] `graph` reports module/connection counts and the `dot` render line.
 
 ### 2026-11-20 — Phase 6c: Monte Carlo campaigns from TOML
 Validated end-to-end against installed **Basilisk 2.12.2** (new example

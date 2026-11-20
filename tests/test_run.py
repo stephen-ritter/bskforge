@@ -251,6 +251,25 @@ class TestRun:
                 {"chaser.state", "tumor.state"},
             ),
             (
+                "ground_pointing.toml",
+                {
+                    "imager.state",
+                    "imager.control_torque",
+                    "imager.rw_speeds",
+                    "imager.st",
+                },
+            ),
+            (
+                "relay_chain.toml",
+                {
+                    "chain.barycenter",
+                    "chain.rel_deputy",
+                    "feed.link",
+                    "down.link",
+                    "down.access",
+                },
+            ),
+            (
                 "comm_links.toml",
                 {"down.link", "down.access", "xlink.link", "relay.state"},
             ),
@@ -1136,6 +1155,17 @@ class TestGuidanceAndControl:
         # LVLH is a rotating frame: the body spins at the orbital rate
         n = math.sqrt(3.986004418e14 / 7200e3**3)
         assert omega == pytest.approx(n, rel=0.05)
+
+    def test_location_point_tracks_ground_site(self):
+        # SPICE planet: the +X-pointed loop must chase the site fixed
+        # on the rotating Earth, keeping the tracking error bounded
+        err_norm, omega = self._tracking_metrics(
+            {"type": "locationPointing", "target_latlon": [0.0, 0.0, 0.0]},
+            {"type": "mrpPD"},
+            300.0,
+        )
+        assert err_norm < 0.05
+        assert np.isfinite(omega)
 
     def test_velocity_point_tracks_velocity(self):
         err_norm, omega = self._tracking_metrics(
