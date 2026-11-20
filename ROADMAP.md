@@ -12,9 +12,8 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-Phase 6 — fleets & operations: comm links, formation flying wiring,
-Monte Carlo dispersions. Design pass on the Basilisk comm/formation
-modules in flight.
+Phase 6 — fleets & operations: comm links ✅ and formation flying ✅
+(committed below); Monte Carlo dispersions in flight.
 
 ---
 
@@ -51,9 +50,9 @@ modules in flight.
       `locationPointing`, `celestialTwoBodyPoint`
 - [x] Control: `mrpPD`, `rateServoFullNonlinear`, `mrpSteering`
 
-### Phase 6 — Fleets & operations
-- [ ] Comm links (`simpleAntenna`, `linkBudget`)
-- [ ] Formation FSW modules and formation flying wiring
+### Phase 6 — Fleets & operations  🔧
+- [x] Comm links (`simpleAntenna`, `linkBudget`)
+- [x] Formation FSW modules and formation flying wiring
       (`formationBarycenter`, `hillStateConverter`)
 - [ ] Monte Carlo (`MonteCarlo.Controller`) + dispersions from TOML
 - [ ] Hook-based event effects beyond `[custom.events]` (already available:
@@ -68,6 +67,30 @@ modules in flight.
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 6a/6b: RF comm links and formation flying
+Validated end-to-end against installed **Basilisk 2.12.2** (new examples
+`examples/comm_links.toml`, `examples/formation_flying.toml` + 14 new
+tests, 87 total passing).
+- [x] `[[comm_links]]`: `downlink` (spacecraft → `groundLocation`
+      station on the SPICE planet, with access recording) and
+      `crosslink` (spacecraft → spacecraft), each end a fully
+      configurable `simpleAntenna` (frequency, bandwidth, directivity,
+      HPBW ratio, power, efficiency, mount position/orientation)
+      driven by a static TX/RX `AntennaStateMsg`; the pair feeds
+      `linkBudget` → recorded `{link}.link` (distance, antenna states,
+      CNR), `{link}.rx` (antenna log) and `{link}.access` (ground
+      access/geometry). Root validation: unique names, existing
+      endpoints, no self loops, SPICE required for ground stations.
+- [x] `[[formations]]`: `FormationBarycenter` (mass-weighted, `mu`
+      from the world; hub mass now carried in `VehicleConfigMsgPayload
+      .massSC` — the zero default NaNed the barycenter) and one
+      `hillStateConverter` per deputy → recorded `{form}.barycenter`
+      and `{form}.rel_{member}` (`r_DC_H`/`v_DC_H` in the chief's Hill
+      frame). Reuses the shared per-vehicle `NavTransMsg`
+      (`ensure_trans_msg`).
+- [x] Scenario-level recorder registry (`ctx.scenario_recorders`,
+      dyn or fsw task) exported alongside the per-spacecraft frames.
 
 ### 2026-11-20 — Phase 5: guidance laws and control laws
 Validated end-to-end against installed **Basilisk 2.12.2** (new example
@@ -311,8 +334,8 @@ Legend: ❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end
 | Att control | `mrpFeedback` · `mrpPD` · `rateServo` (`mrpSteering` + `rateServoFullNonlinear`) ✅ | ✅ |
 | Att effector iface | `rwMotorTorque`, `thrForceMapping`, `dipoleMapping` | ✅ |
 | Momentum mgmt | `thrMomentumManagement`, `thrMomentumDumping`, `mtbMomentumManagementSimple`, `rwNullSpace` | ✅ |
-| Formation | `formationBarycenter`, `hillStateConverter` | ❌ (Phase 6; `[custom]` reachable) |
-| Comms | `simpleAntenna`, `linkBudget` | ❌ (Phase 6; `[custom]` reachable) |
+| Formation | `formationBarycenter`, `hillStateConverter` ✅ | ✅ |
+| Comms | `simpleAntenna`, `linkBudget`, `groundLocation` ✅ | ✅ |
 | Monte Carlo | `MonteCarlo.Controller` | ❌ (Phase 6) |
 | Visualization | `vizSupport` | 🔧 (attach path built; headless capture test pending) |
 | Data export | recorder field discovery → CSV/parquet/npz | ✅ |

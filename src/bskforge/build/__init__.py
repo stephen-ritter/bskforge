@@ -17,6 +17,7 @@ from bskforge.build.comm import build_comm_links
 from bskforge.build.context import SimContext
 from bskforge.build.disturbances import build_disturbances
 from bskforge.build.effectors import EFFECTOR_BUILDERS
+from bskforge.build.formation import build_formations
 from bskforge.build.fsw import build_fsw
 from bskforge.build.sensors import SENSOR_BUILDERS, build_css_constellations
 from bskforge.build.spacecraft import build_vehicle
@@ -82,6 +83,7 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
 
     custom.build_custom_modules(ctx)
     custom.build_custom_connections(ctx)
+    build_formations(ctx)
     build_comm_links(ctx)
     recorders.build_recorders(ctx)
     custom.build_custom_events(ctx)

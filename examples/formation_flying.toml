@@ -1,0 +1,48 @@
+# A three-spacecraft train with recorded relative states.
+#
+# `chief` leads two deputies: `ahead` rides 0.4 degrees of RAAN
+# forward, `below` 0.3 degrees back on a slightly lower orbit. The
+# formation block records the mass-weighted barycenter state of the
+# group and each deputy's relative state in the chief's Hill frame.
+
+[simulation]
+name = "formation-flying"
+duration = 600.0
+
+[[spacecraft]]
+name = "chief"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+e = 0.0
+i = 0.0
+raan = 0.0
+
+[[spacecraft]]
+name = "ahead"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7.0e6
+e = 0.0
+i = 0.0
+raan = 0.4
+
+[[spacecraft]]
+name = "below"
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 6.99e6
+e = 0.0
+i = 0.0
+raan = -0.3
+
+[[formations]]
+name = "train"
+members = ["chief", "ahead", "below"]
+relative_to = "chief"

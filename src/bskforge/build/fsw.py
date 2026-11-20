@@ -323,7 +323,7 @@ class _DumpRearm(sysModel.SysModel):
             self.desat.Reset(CurrentSimNanos)
 
 
-def _ensure_trans_msg(ctx: SimContext, bundle: SpacecraftBundle) -> Any:
+def ensure_trans_msg(ctx: SimContext, bundle: SpacecraftBundle) -> Any:
     """Return the vehicle's ``NavTransMsg``, adding a silent truth pass.
 
     The orbit-aware guidance modules read ``NavTransMsg``; ``SimpleNav``
@@ -533,7 +533,7 @@ def _build_guidance(
         ref = velocityPoint.velocityPoint()
         ref.ModelTag = f"{name}_velocityPoint"
         ref.mu = guid.mu if guid.mu is not None else ctx.central_mu
-        ref.transNavInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        ref.transNavInMsg.subscribeTo(ensure_trans_msg(ctx, bundle))
         planet = _central_ephem(ctx)
         if planet is not None:
             ref.celBodyInMsg.subscribeTo(_ephem_from(ctx, planet, "central"))
@@ -545,7 +545,7 @@ def _build_guidance(
     if guid.type == "hillPoint":
         ref = hillPoint.hillPoint()
         ref.ModelTag = f"{name}_hillPoint"
-        ref.transNavInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        ref.transNavInMsg.subscribeTo(ensure_trans_msg(ctx, bundle))
         planet = _central_ephem(ctx)
         if planet is not None:
             ref.celBodyInMsg.subscribeTo(_ephem_from(ctx, planet, "central"))
@@ -557,7 +557,7 @@ def _build_guidance(
     if guid.type == "sunSafePoint":
         sunline = sunlineEphem.sunlineEphem()
         sunline.ModelTag = f"{name}_sunlineEphem"
-        sunline.scPositionInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        sunline.scPositionInMsg.subscribeTo(ensure_trans_msg(ctx, bundle))
         sunline.scAttitudeInMsg.subscribeTo(nav_msg)
         sunline.sunPositionInMsg.subscribeTo(
             _ephem_from(ctx, ctx.ensure_sun_msg(), "sun")
@@ -582,7 +582,7 @@ def _build_guidance(
         ref.pHat_B = list(guid.point_axis_B)
         ref.cHat_B = list(guid.scan_axis_B)
         ref.scAttInMsg.subscribeTo(nav_msg)
-        ref.scTransInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        ref.scTransInMsg.subscribeTo(ensure_trans_msg(ctx, bundle))
         if guid.target_body is not None:
             ref.celBodyInMsg.subscribeTo(
                 _ephem_for(ctx, guid.target_body, "locationPointing")
@@ -621,7 +621,7 @@ def _build_guidance(
     if guid.type == "celestialTwoBodyPoint":
         ref = celestialTwoBodyPoint.celestialTwoBodyPoint()
         ref.ModelTag = f"{name}_celestialTwoBodyPoint"
-        ref.transNavInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        ref.transNavInMsg.subscribeTo(ensure_trans_msg(ctx, bundle))
         ref.celBodyInMsg.subscribeTo(
             _ephem_for(ctx, guid.target_body, "celestialTwoBodyPoint")
         )

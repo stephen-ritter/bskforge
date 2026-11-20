@@ -232,6 +232,7 @@ class SimContext:
         key: str,
         msg: Any,
         sample_time: float | None = None,
+        task: str = DYN_TASK,
     ) -> None:
         """Record a scenario-level message (no spacecraft bundle)."""
         from Basilisk.utilities import simHelpers
@@ -243,7 +244,10 @@ class SimContext:
                 self.config.logging.default_num_points,
             )
         recorder = msg.recorder(int(sample_time))
-        self.add_dyn(recorder, priority=100)
+        if task == DYN_TASK:
+            self.add_dyn(recorder, priority=100)
+        else:
+            self.add_to_task(task, recorder)
         self.scenario_recorders.append(RecorderSpec(key=key, recorder=recorder))
 
     def central_state_msg(self) -> Any:

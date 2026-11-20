@@ -253,6 +253,15 @@ class TestRun:
                 "comm_links.toml",
                 {"down.link", "down.access", "xlink.link", "relay.state"},
             ),
+            (
+                "formation_flying.toml",
+                {
+                    "train.barycenter",
+                    "train.rel_ahead",
+                    "train.rel_below",
+                    "chief.state",
+                },
+            ),
         ],
     )
     def test_examples_run_short_duration(self, example, expected_streams):
@@ -1380,5 +1389,104 @@ class TestCommLinks:
                             "receiver": "a",
                         }
                     ]
+                )
+            )
+
+
+# -- Phase 6: formation flying ----------------------------------------------
+
+
+def _formation_config(spacecraft: list[dict], formation: dict) -> dict:
+    scenario = {
+        "simulation": {"name": "formation", "duration": 300.0},
+        "spacecraft": spacecraft,
+        "formations": [formation],
+    }
+    return scenario
+
+
+def _sc(name: str, raan: float, a: float = 7000e3, mass: float | None = None) -> dict:
+    hub = {"mass": mass} if mass is not None else {}
+    return {
+        "name": name,
+        "hub": hub,
+        "orbit": {
+            "type": "elements",
+            "elements": {"a": a, "e": 0.0, "i": 0.0, "raan": raan},
+        },
+    }
+
+
+R_COLS = ["r_BN_N[0]", "r_BN_N[1]", "r_BN_N[2]"]
+
+
+class TestFormationFlying:
+    """Barycenter averaging and Hill-frame relative states."""
+
+    def test_hill_relative_state_is_steady_separation(self):
+        config = validate_scenario(
+            _formation_config(
+                [_sc("chief", 0.0), _sc("dep", 0.5)],
+                {"name": "club", "members": ["chief", "dep"]},
+            )
+        )
+        result = ScenarioRunner(config).run(duration=300.0)
+        rel = result.frames["club.rel_dep"]
+        r = rel[["r_DC_H[0]", "r_DC_H[1]", "r_DC_H[2]"]].to_numpy()
+        v = rel[["v_DC_H[0]", "v_DC_H[1]", "v_DC_H[2]"]].to_numpy()
+        assert np.isfinite(r[1:]).all()
+        # co-orbiting with a pure along-track offset: constant separation
+        # along +y (the larger RAAN sits ahead on the equatorial circle),
+        # radial and cross-track gaps stay shut
+        y = r[-1, 1]
+        assert y == pytest.approx(2 * 7000e3 * math.sin(math.radians(0.25)), rel=0.02)
+        assert np.linalg.norm(r[-1, [0, 2]]) < 1e3
+        assert np.linalg.norm(v[-1]) < 1.0
+
+    def test_barycenter_is_mass_weighted(self):
+        config = validate_scenario(
+            _formation_config(
+                [_sc("a", 0.0, mass=100.0), _sc("b", 0.5, mass=300.0)],
+                {"name": "club", "members": ["a", "b"]},
+            )
+        )
+        result = ScenarioRunner(config).run(duration=300.0)
+        bar = result.frames["club.barycenter"][R_COLS].to_numpy()
+        ra = result.frames["a.state"][R_COLS].to_numpy()
+        rb = result.frames["b.state"][R_COLS].to_numpy()
+        expected = (100.0 * ra + 300.0 * rb) / 400.0
+        assert np.linalg.norm(bar[-1] - expected[-1]) < 2e3
+        assert np.isfinite(bar[1:]).all()
+
+    def test_barycenter_can_be_disabled(self):
+        config = validate_scenario(
+            _formation_config(
+                [_sc("chief", 0.0), _sc("dep", 0.5)],
+                {"name": "club", "members": ["chief", "dep"], "barycenter": False},
+            )
+        )
+        result = ScenarioRunner(config).run(duration=60.0)
+        assert "club.barycenter" not in result.frames
+        assert "club.rel_dep" in result.frames
+
+    def test_formation_rejects_unknown_member(self):
+        with pytest.raises(ConfigError, match="are not"):
+            validate_scenario(
+                _formation_config(
+                    [_sc("chief", 0.0)],
+                    {"name": "club", "members": ["chief", "ghost"]},
+                )
+            )
+
+    def test_formation_rejects_foreign_chief(self):
+        with pytest.raises(ConfigError, match="not a member"):
+            validate_scenario(
+                _formation_config(
+                    [_sc("chief", 0.0), _sc("dep", 0.5)],
+                    {
+                        "name": "club",
+                        "members": ["chief", "dep"],
+                        "relative_to": "stranger",
+                    },
                 )
             )

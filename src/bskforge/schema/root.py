@@ -16,6 +16,7 @@ from bskforge.schema.base import ScenarioModel
 from bskforge.schema.comm import CommLinkConfig
 from bskforge.schema.custom import CustomSection
 from bskforge.schema.environment import EnvironmentSection
+from bskforge.schema.formation import FormationConfig
 from bskforge.schema.logging import LoggingSection
 from bskforge.schema.simulation import SimulationSection
 from bskforge.schema.spacecraft import SpacecraftSection
@@ -37,6 +38,7 @@ class ScenarioConfig(ScenarioModel):
     environment: EnvironmentSection | None = None
     spacecraft: list[SpacecraftSection] = Field(default_factory=list)
     comm_links: list[CommLinkConfig] = Field(default_factory=list)
+    formations: list[FormationConfig] = Field(default_factory=list)
     logging: LoggingSection = Field(default_factory=LoggingSection)
     visualization: VisualizationSection = Field(default_factory=VisualizationSection)
     custom: CustomSection = Field(default_factory=CustomSection)
@@ -95,6 +97,17 @@ class ScenarioConfig(ScenarioModel):
                         f"{guid.type!r} needs SPICE ephemerides; add a "
                         "[world.spice] section"
                     )
+        formation_names = [form.name for form in self.formations]
+        if len(formation_names) != len(set(formation_names)):
+            dupes = sorted({n for n in formation_names if formation_names.count(n) > 1})
+            raise ValueError(f"duplicate formation names: {', '.join(dupes)}")
+        for form in self.formations:
+            missing = [m for m in form.members if m not in names]
+            if missing:
+                raise ValueError(
+                    f"formation {form.name!r}: members {missing} are not "
+                    "[[spacecraft]] names"
+                )
         link_names = [link.name for link in self.comm_links]
         if len(link_names) != len(set(link_names)):
             dupes = sorted({n for n in link_names if link_names.count(n) > 1})

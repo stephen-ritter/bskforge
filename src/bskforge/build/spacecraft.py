@@ -63,7 +63,9 @@ def build_vehicle(ctx: SimContext, sc_cfg: SpacecraftSection) -> SpacecraftBundl
 
     veh_config_msg = messaging.VehicleConfigMsg()
     veh_config_msg.write(
-        messaging.VehicleConfigMsgPayload(ISCPntB_B=flat_inertia)  # ty: ignore
+        messaging.VehicleConfigMsgPayload(  # ty: ignore
+            ISCPntB_B=flat_inertia, massSC=sc_cfg.hub.mass
+        )
     )
 
     bundle = SpacecraftBundle(
