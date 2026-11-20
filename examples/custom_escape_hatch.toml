@@ -1,0 +1,82 @@
+# Layer-3 escape hatch: express Basilisk primitives directly.
+# Adds a low-pass torque filter between the control law and the
+# extForceTorque effector using [custom] modules/connections — a capability
+# bskforge has no dedicated domain block for yet.
+
+[simulation]
+name = "Custom torque filter"
+duration = 300.0
+
+[simulation.dt]
+dynamics = 0.1
+fsw = 1.0
+
+[world]
+central_body = "earth"
+
+[[spacecraft]]
+name = "sc1"
+
+[spacecraft.hub]
+mass = 750.0
+[spacecraft.hub.inertia]
+ixx = 900.0
+iyy = 800.0
+izz = 600.0
+
+[spacecraft.orbit]
+type = "elements"
+[spacecraft.orbit.elements]
+a = 7000e3
+e = 0.001
+
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.01
+[[spacecraft.effectors.wheels]]
+direction_B = [1, 0, 0]
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 1, 0]
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 0, 1]
+
+[spacecraft.fsw.guidance]
+type = "inertial3D"
+
+[spacecraft.fsw.estimator]
+type = "simpleNav"
+
+[spacecraft.fsw.control]
+type = "mrpFeedback"
+k = 3.5
+p = 30.0
+
+[spacecraft.fsw.allocation]
+type = "rwMotorTorque"
+
+[custom]
+
+# A low-pass filter on the commanded torque: the filter consumes the MRP
+# feedback output, and the custom connections re-point the effector-side
+# consumers (built earlier by the domain builders) to the filtered signal.
+[[custom.modules]]
+module = "Basilisk.fswAlgorithms.lowPassFilterTorqueCommand.lowPassFilterTorqueCommand"
+tag = "torqueFilter"
+task = "fswTask"
+[custom.modules.params]
+wc = 0.5     # cut-off frequency [rad/s]
+
+[[custom.connections]]
+source = "sc1_mrpFeedback.cmdTorqueOutMsg"
+destination = "torqueFilter.cmdTorqueInMsg"
+
+[[custom.connections]]
+source = "torqueFilter.cmdTorqueOutMsg"
+destination = "sc1_rwMotorTorque.vehControlInMsg"
+
+[[custom.connections]]
+source = "torqueFilter.cmdTorqueOutMsg"
+destination = "sc1_extFT.cmdTorqueInMsg"
+
+[spacecraft.logging.state]
+sample_time = 0.5

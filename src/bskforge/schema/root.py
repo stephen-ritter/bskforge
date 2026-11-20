@@ -1,0 +1,74 @@
+#
+#  ISC License
+#
+#  Copyright (c) 2026, Autonomous Vehicle Systems Lab, University of
+#  Colorado at Boulder
+#
+#  See LICENSE for full terms.
+
+"""Root scenario model: the parsed and validated scenario document."""
+
+from __future__ import annotations
+
+from pydantic import Field, model_validator
+
+from bskforge.schema.base import ScenarioModel
+from bskforge.schema.custom import CustomSection
+from bskforge.schema.environment import EnvironmentSection
+from bskforge.schema.logging import LoggingSection
+from bskforge.schema.simulation import SimulationSection
+from bskforge.schema.spacecraft import SpacecraftSection
+from bskforge.schema.visualization import VisualizationSection
+from bskforge.schema.world import WorldSection
+
+
+class ScenarioConfig(ScenarioModel):
+    """Root of a ``bskforge`` scenario document.
+
+    Top-level tables: ``[simulation]``, ``[world]``, ``[environment]``,
+    ``[[spacecraft]]`` (repeatable), ``[logging]``, ``[visualization]``.
+    A scenario may inherit defaults from another file via
+    ``extends = "base.toml"`` (resolved by :mod:`bskforge.loader`).
+    """
+
+    simulation: SimulationSection = Field(default_factory=SimulationSection)
+    world: WorldSection = Field(default_factory=WorldSection)
+    environment: EnvironmentSection | None = None
+    spacecraft: list[SpacecraftSection] = Field(default_factory=list)
+    logging: LoggingSection = Field(default_factory=LoggingSection)
+    visualization: VisualizationSection = Field(default_factory=VisualizationSection)
+    custom: CustomSection = Field(default_factory=CustomSection)
+    monte_carlo: dict | None = None
+
+    @model_validator(mode="after")
+    def _cross_check(self) -> ScenarioConfig:
+        names = [sc.name for sc in self.spacecraft]
+        if len(names) != len(set(names)):
+            dupes = sorted({n for n in names if names.count(n) > 1})
+            raise ValueError(f"duplicate spacecraft names: {', '.join(dupes)}")
+        for sc in self.spacecraft:
+            if (
+                sc.fsw is not None
+                and sc.fsw.allocation is not None
+                and sc.reaction_wheels() is None
+            ):
+                raise ValueError(
+                    f"spacecraft {sc.name!r} declares an fsw allocation "
+                    "but has no reactionWheels effector to allocate to"
+                )
+        if self.monte_carlo:
+            raise ValueError(
+                "monte_carlo requires Phase 6; remove [monte_carlo] to run "
+                "the deterministic scenario"
+            )
+        return self
+
+    def primary_vehicle(self) -> SpacecraftSection:
+        """Return the first configured vehicle.
+
+        Raises:
+            ValueError: If the scenario has no spacecraft.
+        """
+        if not self.spacecraft:
+            raise ValueError("scenario defines no [[spacecraft]]")
+        return self.spacecraft[0]

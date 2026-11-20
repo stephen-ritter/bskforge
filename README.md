@@ -37,9 +37,9 @@ inertia = [900, 0, 0, 0, 800, 0, 0, 0, 600]   # kg*m^2, row-major
 [spacecraft.orbit]
 type = "elements"
 [spacecraft.orbit.elements]
-semi_major_axis = 1.0e7
-eccentricity = 0.01
-inclination = 33.3
+a = 1.0e7
+e = 0.01
+i = 33.3
 
 [[spacecraft.effectors]]
 type = "reactionWheels"
@@ -59,6 +59,43 @@ state = { enabled = true, sample_time = 0.5 }
 Multiple vehicles are declared with additional `[[spacecraft]]` tables; global
 `[world]` / `[environment]` defaults can be overridden per vehicle. Scenario
 files can inherit from another file with `extends = "base.toml"`.
+
+## Guaranteed coverage: the `[custom]` escape hatch
+
+Anything the domain sections do not model yet is still expressible: the
+`[custom]` section exposes Basilisk's native graph primitives directly —
+arbitrary module classes by import path, tasks/processes, message
+connections (`"tag.outMsgName"` → `"tag.inMsgName"`), and events (time
+conditions or `pkg.module:function` hooks). Every Basilisk scenario script
+is a composition of those primitives, so the format can express everything
+the installed Basilisk build can do. See
+[`examples/custom_escape_hatch.toml`](examples/custom_escape_hatch.toml).
+
+Every Basilisk object created by the domain builders also accepts a free-form
+`params = { ... }` table; names are checked against the *installed* Basilisk
+module at build time (with did-you-mean errors), so new upstream parameters
+need no bskforge changes.
+
+## Status (Phase 1: core rewrite)
+
+Implemented: TOML loading with `extends` inheritance and friendly errors,
+gravity-body worlds (presets + custom point masses), hub + orbit/attitude
+initial state, reaction-wheel effectors, CSS / star tracker / IMU sensors,
+`inertial3D` → `simpleNav`/`attTrackingError` → `mrpFeedback` →
+`rwMotorTorque` FSW stacks, multi-spacecraft scenarios, message recorders
+with CSV/parquet/npz export, Vizard visualization hooks, and the `[custom]`
+escape hatch.
+
+Pending: SPICE ephemerides, magnetic field / atmosphere / eclipse, and
+disturbance effectors (Phase 2); imaging sensors (Phase 3); thrusters and
+power/thermal domain sugar (Phase 4); Monte Carlo (Phase 6). Configuring any
+pending block fails with a clear phase pointer instead of silently ignoring
+it.
+
+Known Basilisk behavior: recorder samples taken at `t = 0` capture messages
+before their writer modules first execute (Basilisk logs them as
+"not properly initialized" warnings once per stream); all later samples are
+full-rate data.
 
 See [`ROADMAP.md`](ROADMAP.md) for the Basilisk coverage matrix and what is
 implemented at each phase.

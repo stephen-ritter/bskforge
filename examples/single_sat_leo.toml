@@ -1,64 +1,81 @@
-# Single satellite LEO detumble simulation
-# Based on scenarioAttitudeFeedback.py
+# Single-spacecraft LEO attitude control, bskforge schema v2.
+# Mirrors Basilisk scenarioAttitudeFeedbackRW.py.
 
 [simulation]
-name = "LEO Detumble"
-dt_dynamics = 0.1
-dt_fsw = 0.1
+name = "LEO detumble"
 duration = 600.0
 
-[simulation.central_body]
-name = "earth"
+[simulation.dt]
+dynamics = 0.1
+fsw = 1.0
 
-# Visualization settings (requires Basilisk Viz/Unity installed)
-# [simulation.visualization]
-# enabled = true
-# live_stream = false      # Stream state data in real-time to Vizard
-# broadcast_stream = false # Broadcast messages for listener Vizards
-# save_file = "viz_data"   # Path to visualization save file
+[world]
+central_body = "earth"
 
-# --- Satellite definition ---
-
-[[satellites]]
+[[spacecraft]]
 name = "sc1"
 
-[satellites.hub]
+[spacecraft.hub]
 mass = 750.0
 
-[satellites.hub.inertia]
+[spacecraft.hub.inertia]
 ixx = 900.0
 iyy = 800.0
 izz = 600.0
 
-[satellites.orbit]
+[spacecraft.orbit]
 type = "elements"
 
-[satellites.orbit.elements]
-semi_major_axis = 10000000.0
-eccentricity = 0.01
-inclination = 33.3
+[spacecraft.orbit.elements]
+a = 1.0e7
+e = 0.01
+i = 33.3
 raan = 48.2
-arg_perigee = 347.8
-true_anomaly = 85.3
+omega = 347.8
+trueAnomaly = 85.3
 
-[satellites.attitude.initial]
+[spacecraft.attitude.initial]
 sigma_BN = [0.1, 0.2, -0.3]
 omega_BN_B = [0.001, -0.01, 0.03]
 
-[satellites.attitude.control]
-type = "mrp_feedback"
+[[spacecraft.effectors]]
+type = "reactionWheels"
+inertia = 0.01
 
-[satellites.attitude.control.mrp_feedback]
+[[spacecraft.effectors.wheels]]
+direction_B = [1, 0, 0]
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 1, 0]
+
+[[spacecraft.effectors.wheels]]
+direction_B = [0, 0, 1]
+
+[spacecraft.fsw.guidance]
+type = "inertial3D"
+sigma_R0N = [0.0, 0.0, 0.0]
+
+[spacecraft.fsw.estimator]
+type = "simpleNav"
+
+[spacecraft.fsw.control]
+type = "mrpFeedback"
 k = 3.5
 p = 30.0
 ki = -1.0
 
-# --- Recorder configuration (per-component) ---
+[spacecraft.fsw.allocation]
+type = "rwMotorTorque"
 
-[satellites.recorder]
-enabled = true
+[spacecraft.logging.state]
 sample_time = 0.5
 
-[satellites.attitude.control.recorder]
-enabled = true
+[spacecraft.logging.control_torque]
 sample_time = 0.5
+
+[logging]
+# directory = "output/leo_detumble"   # uncomment to export CSV automatically
+
+# [visualization]
+# enabled = true
+# live_stream = true

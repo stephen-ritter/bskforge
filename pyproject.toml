@@ -82,6 +82,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "D"]
+# Pydantic field defaults legitimately use mutable values on model classes.
+"src/bskforge/schema/*.py" = ["RUF012"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -102,4 +104,4 @@ include = ["src", "tests"]
 [tool.ty.rules]
 # Basilisk ships SWIG bindings without type stubs; unresolved imports there
 # are expected and must not mask errors in our own typed code.
-unresolved-import = "warn"
+import-not-found = "warn"
