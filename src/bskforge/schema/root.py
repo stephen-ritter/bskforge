@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 
 from bskforge.schema.base import ScenarioModel
 from bskforge.schema.custom import CustomSection
@@ -39,6 +39,18 @@ class ScenarioConfig(ScenarioModel):
     visualization: VisualizationSection = Field(default_factory=VisualizationSection)
     custom: CustomSection = Field(default_factory=CustomSection)
     monte_carlo: dict | None = None
+
+    #: scenario file the document was loaded from (``None`` for dicts)
+    _source_path: str | None = PrivateAttr(default=None)
+
+    @property
+    def source_path(self) -> str | None:
+        """Path of the scenario file this document was loaded from."""
+        return self._source_path
+
+    def set_source_path(self, path: str) -> None:
+        """Record the scenario file path (called by :mod:`bskforge.loader`)."""
+        self._source_path = path
 
     @model_validator(mode="after")
     def _cross_check(self) -> ScenarioConfig:
@@ -69,6 +81,17 @@ class ScenarioConfig(ScenarioModel):
                     raise ValueError(
                         f"spacecraft {sc.name!r}: {kind} requires "
                         f"{' and '.join(needed)} effectors"
+                    )
+            if sc.fsw is not None and sc.fsw.guidance is not None:
+                guid = sc.fsw.guidance
+                needs_spice = guid.type == "celestialTwoBodyPoint" or (
+                    guid.type == "locationPointing" and guid.target_latlon is not None
+                )
+                if needs_spice and not self.world.spice.enabled:
+                    raise ValueError(
+                        f"spacecraft {sc.name!r}: guidance "
+                        f"{guid.type!r} needs SPICE ephemerides; add a "
+                        "[world.spice] section"
                     )
         if self.monte_carlo:
             raise ValueError(

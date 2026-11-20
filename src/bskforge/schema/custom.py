@@ -48,7 +48,7 @@ class CustomModule(ScenarioModel):
             ``"Basilisk.simulation.simpleNav.SimpleNav"``.
         tag: Unique ModelTag; connections address ``tag.messageName``.
         task: Task name to run the module on (defaults to the dynamics task).
-        priority: Model priority on that task (higher runs later).
+        priority: Model priority on that task (higher runs earlier).
         params: Attributes applied via introspection-checked ``setattr``.
     """
 

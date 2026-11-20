@@ -57,9 +57,12 @@ def validate_scenario(data: dict[str, Any], source: str = "<dict>") -> ScenarioC
     data = dict(data)
     data.pop("extends", None)
     try:
-        return ScenarioConfig(**data)
+        config = ScenarioConfig(**data)
     except ValidationError as exc:
         raise ConfigError(_format_validation_error(exc, data, source)) from exc
+    if source != "<dict>":
+        config.set_source_path(source)
+    return config
 
 
 def _load_with_extends(path: Path, seen: list[Path]) -> dict[str, Any]:

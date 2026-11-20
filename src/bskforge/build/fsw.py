@@ -16,15 +16,23 @@ import numpy as np
 from Basilisk.architecture import messaging, sysModel
 from Basilisk.fswAlgorithms import (
     attTrackingError,
+    celestialTwoBodyPoint,
     cssWlsEst,
     dipoleMapping,
+    hillPoint,
     inertial3D,
     inertialUKF,
+    locationPointing,
     mrpFeedback,
+    mrpPD,
+    mrpSteering,
     mtbMomentumManagementSimple,
+    rateServoFullNonlinear,
     rwMotorTorque,
     rwNullSpace,
+    sunlineEphem,
     sunlineSuKF,
+    sunSafePoint,
     tamComm,
     thrFiringRound,
     thrFiringSchmitt,
@@ -32,6 +40,8 @@ from Basilisk.fswAlgorithms import (
     thrMomentumDumping,
     thrMomentumManagement,
     torque2Dipole,
+    velocityPoint,
+    waypointReference,
 )
 from Basilisk.simulation import magnetometer, simpleNav
 from Basilisk.utilities import RigidBodyKinematics as rbk
@@ -69,11 +79,19 @@ def build_fsw(ctx: SimContext, bundle: SpacecraftBundle) -> None:
     if cfg is None:
         return
 
-    nav_msg = _build_estimator(ctx, bundle, cfg)
-    ref_msg = _build_guidance(ctx, bundle, cfg)
+    needs_nav = cfg.guidance is not None and cfg.guidance.type in {
+        "sunSafePoint",
+        "locationPointing",
+    }
+    nav_msg = _build_estimator(ctx, bundle, cfg, needs_nav)
+    ref_msg, ref_kind = _build_guidance(ctx, bundle, cfg, nav_msg)
 
     if cfg.control is not None:
-        err_msg = _build_tracking_error(ctx, bundle, nav_msg, ref_msg)
+        if ref_kind == "guid":
+            # guidance modules that emit a tracking error directly
+            err_msg = ref_msg
+        else:
+            err_msg = _build_tracking_error(ctx, bundle, nav_msg, ref_msg)
         ctrl = _build_control(ctx, bundle, cfg.control, err_msg)
         bundle.fsw["control"] = ctrl
         if cfg.allocation is None:
@@ -88,10 +106,12 @@ def build_fsw(ctx: SimContext, bundle: SpacecraftBundle) -> None:
         _build_desaturation(ctx, bundle, cfg.desaturation)
 
 
-def _build_estimator(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection) -> Any:
+def _build_estimator(
+    ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection, needs_nav: bool = False
+) -> Any:
     """Build the navigation/estimator module and return its attitude msg."""
     if cfg.estimator is None:
-        if cfg.control is None:
+        if not needs_nav and cfg.control is None:
             return bundle.sc.scStateOutMsg
         # the control chain needs a NavAttMsg; insert a silent truth pass
         nav = simpleNav.SimpleNav()
@@ -99,6 +119,7 @@ def _build_estimator(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection)
         nav.scStateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
         ctx.add_fsw(nav)
         ctx.register_tag(nav.ModelTag, nav)
+        bundle.fsw["estimator"] = nav
         return nav.attOutMsg
     est = cfg.estimator
     if est.type == "simpleNav":
@@ -302,20 +323,330 @@ class _DumpRearm(sysModel.SysModel):
             self.desat.Reset(CurrentSimNanos)
 
 
-def _build_guidance(ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection) -> Any:
-    """Build the attitude-reference (guidance) module and return its msg."""
-    if cfg.guidance is None:
+def _ensure_trans_msg(ctx: SimContext, bundle: SpacecraftBundle) -> Any:
+    """Return the vehicle's ``NavTransMsg``, adding a silent truth pass.
+
+    The orbit-aware guidance modules read ``NavTransMsg``; ``SimpleNav``
+    produces one, so it is reused from the estimator when possible and
+    inserted silently otherwise.
+    """
+    cached = bundle.fsw.get("trans_msg")
+    if cached is not None:
+        return cached
+    estimator = bundle.fsw.get("estimator")
+    if estimator is not None and hasattr(estimator, "transOutMsg"):
+        bundle.fsw["trans_msg"] = estimator.transOutMsg
+        return bundle.fsw["trans_msg"]
+    nav = simpleNav.SimpleNav()
+    nav.ModelTag = f"{bundle.config.name}_navTrans"
+    nav.scStateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
+    ctx.add_fsw(nav)
+    ctx.register_tag(nav.ModelTag, nav)
+    bundle.fsw["trans_msg"] = nav.transOutMsg
+    return bundle.fsw["trans_msg"]
+
+
+class _SpiceToEphemeris(sysModel.SysModel):
+    """Re-publish a ``SpicePlanetStateMsg`` as an ``EphemerisMsg``.
+
+    The ephemeris-driven guidance modules read ``EphemerisMsg``, while
+    ``SpiceInterface`` writes the distinct ``SpicePlanetStateMsg`` type;
+    this bridge copies position, velocity and orientation each tick.
+    """
+
+    def __init__(self, spice_msg: Any, out_msg: Any) -> None:
+        """Store the source message and the ephemeris destination."""
+        super().__init__()
+        self.spice_msg = spice_msg
+        self.out_msg = out_msg
+
+    def Reset(self, CurrentSimNanos: int) -> None:
+        """Write a zero-initialized ephemeris so readers start clean."""
+        self.out_msg.write(
+            messaging.EphemerisMsgPayload(),
+            CurrentSimNanos,
+            self.moduleID,
+        )
+
+    def UpdateState(self, CurrentSimNanos: int) -> None:
+        """Copy the live SPICE state into the ephemeris message."""
+        planet = self.spice_msg.read()
+        payload = messaging.EphemerisMsgPayload()
+        payload.timeTag = CurrentSimNanos
+        payload.r_BdyZero_N = [float(x) for x in planet.PositionVector]
+        payload.v_BdyZero_N = [float(x) for x in planet.VelocityVector]
+        j2k_to_planet = np.array(planet.J20002Pfix, dtype=float).reshape(3, 3)
+        payload.sigma_BN = [float(x) for x in rbk.C2MRP(j2k_to_planet)]
+        self.out_msg.write(payload, CurrentSimNanos, self.moduleID)
+
+
+def _ephem_from(ctx: SimContext, source: Any, key: str) -> Any:
+    """Return a cached ``EphemerisMsg`` carrying the same state as ``source``."""
+    cache: dict[str, Any] = ctx.__dict__.setdefault("_ephem_msgs", {})
+    if key in cache:
+        return cache[key]
+    out = messaging.EphemerisMsg()
+    if "SpicePlanetState" in type(source).__name__:
+        bridge = _SpiceToEphemeris(source, out)
+        bridge.ModelTag = f"ephem_{key}"
+        ctx.add_dyn(bridge)
+        ctx.register_tag(bridge.ModelTag, bridge)
+    else:
+        out.subscribeTo(source)  # ty: ignore
+    cache[key] = out
+    return out
+
+
+def _ephem_for(ctx: SimContext, name: str, purpose: str) -> Any:
+    """Return an ``EphemerisMsg`` for body ``name`` (bridging SPICE output)."""
+    return _ephem_from(ctx, _body_ephem(ctx, name, purpose), name.lower())
+
+
+def _central_ephem(ctx: SimContext) -> Any | None:
+    """Return the central body's live ephemeris message when SPICE-driven."""
+    if ctx.central_body is None:
         return None
+    for name, body in ctx.grav_factory.gravBodies.items():
+        if body is ctx.central_body:
+            return ctx.planet_state_msgs.get(str(name).lower())
+    return None
+
+
+def _body_ephem(ctx: SimContext, name: str, purpose: str) -> Any:
+    """Return the ephemeris message for ``name`` (sun fallback: ``[world.sun]``)."""
+    lowered = name.lower()
+    msg = ctx.planet_state_msgs.get(lowered)
+    if msg is None and lowered == "sun":
+        msg = ctx.ensure_sun_msg()
+    if msg is None:
+        raise BuildError(
+            f"{purpose} needs the ephemeris of {name!r}; enable [world.spice] "
+            f"and add {name!r} to [[world.gravities]]"
+        )
+    return msg
+
+
+class _GroundStateWriter(sysModel.SysModel):
+    """Publish the inertial state of a fixed point on a SPICE body.
+
+    ``locationPointing`` wants a ``GroundStateMsg``; this bridge converts
+    geodetic coordinates to an inertial vector every FSW tick using the
+    planet's SPICE orientation.
+    """
+
+    def __init__(
+        self,
+        planet_msg: Any,
+        out_msg: Any,
+        lat_deg: float,
+        lon_deg: float,
+        elevation: float,
+        radius_eq: float,
+        radius_polar: float,
+    ) -> None:
+        """Store the ephemeris source, destination and point coordinates."""
+        super().__init__()
+        self.planet_msg = planet_msg
+        self.out_msg = out_msg
+        lat = np.radians(lat_deg)
+        lon = np.radians(lon_deg)
+        a, b = radius_eq, radius_polar
+        # geodetic latitude is defined by the surface normal of the ellipsoid
+        normal = np.array(
+            [np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]
+        )
+        # surface point along that normal, offset by the elevation
+        gamma = np.sqrt(
+            (a * normal[0]) ** 2 + (a * normal[1]) ** 2 + (b * normal[2]) ** 2
+        )
+        surface = np.array([a * a * normal[0], a * a * normal[1], b * b * normal[2]])
+        self.body_fixed = surface / gamma + elevation * normal
+
+    def Reset(self, CurrentSimNanos: int) -> None:
+        """Write a zero-initialized message so readers start clean."""
+        self.out_msg.write(
+            messaging.GroundStateMsgPayload(),
+            CurrentSimNanos,
+            self.moduleID,
+        )
+
+    def UpdateState(self, CurrentSimNanos: int) -> None:
+        """Rotate the body-fixed point into the inertial frame."""
+        planet = self.planet_msg.read()
+        dcm_bn = np.array(planet.J20002Pfix, dtype=float).reshape(
+            3, 3
+        )  # N -> planet-fixed
+        position = np.array([float(x) for x in planet.PositionVector])
+        r_l_n = position + dcm_bn.T @ self.body_fixed
+        payload = messaging.GroundStateMsgPayload()
+        # locationPointing reads r_LN_N: the location's inertial position
+        payload.r_LN_N = [float(x) for x in r_l_n]
+        payload.r_LP_N = [float(x) for x in r_l_n - position]
+        norm = float(np.linalg.norm(r_l_n))
+        payload.rHat_LP_N = (
+            [float(x) / norm for x in r_l_n] if norm > 0.0 else [0.0, 0.0, 0.0]
+        )
+        self.out_msg.write(payload, CurrentSimNanos, self.moduleID)
+
+
+def _resolve_scenario_path(ctx: SimContext, path_str: str) -> Any:
+    """Resolve ``path_str`` against the scenario file directory when relative."""
+    from pathlib import Path
+
+    path = Path(path_str)
+    if path.is_absolute() or path.exists():
+        return path
+    source = getattr(ctx.config, "source_path", None)
+    if source is not None:
+        candidate = Path(str(source)).parent / path
+        if candidate.exists():
+            return candidate
+    raise BuildError(
+        f"file {path_str!r} not found "
+        "(relative paths resolve against the scenario file's directory)"
+    )
+
+
+def _build_guidance(
+    ctx: SimContext, bundle: SpacecraftBundle, cfg: FswSection, nav_msg: Any
+) -> tuple[Any, str]:
+    """Build the attitude-reference module; return its msg and kind.
+
+    ``kind`` is ``"ref"`` for an ``AttRefMsg`` consumed by
+    ``attTrackingError``, or ``"guid"`` for a module that emits the
+    tracking error (``AttGuidMsg``) directly.
+    """
+    if cfg.guidance is None:
+        return None, "ref"
     guid = cfg.guidance
+    name = bundle.config.name
     if guid.type == "inertial3D":
         ref = inertial3D.inertial3D()
-        ref.ModelTag = f"{bundle.config.name}_inertial3D"
+        ref.ModelTag = f"{name}_inertial3D"
         ref.sigma_R0N = list(guid.sigma_R0N)
         apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
         ctx.add_fsw(ref)
         ctx.register_tag(ref.ModelTag, ref)
         bundle.fsw["guidance"] = ref
-        return ref.attRefOutMsg
+        return ref.attRefOutMsg, "ref"
+    if guid.type == "velocityPoint":
+        ref = velocityPoint.velocityPoint()
+        ref.ModelTag = f"{name}_velocityPoint"
+        ref.mu = guid.mu if guid.mu is not None else ctx.central_mu
+        ref.transNavInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        planet = _central_ephem(ctx)
+        if planet is not None:
+            ref.celBodyInMsg.subscribeTo(_ephem_from(ctx, planet, "central"))
+        apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
+        ctx.add_fsw(ref)
+        ctx.register_tag(ref.ModelTag, ref)
+        bundle.fsw["guidance"] = ref
+        return ref.attRefOutMsg, "ref"
+    if guid.type == "hillPoint":
+        ref = hillPoint.hillPoint()
+        ref.ModelTag = f"{name}_hillPoint"
+        ref.transNavInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        planet = _central_ephem(ctx)
+        if planet is not None:
+            ref.celBodyInMsg.subscribeTo(_ephem_from(ctx, planet, "central"))
+        apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
+        ctx.add_fsw(ref)
+        ctx.register_tag(ref.ModelTag, ref)
+        bundle.fsw["guidance"] = ref
+        return ref.attRefOutMsg, "ref"
+    if guid.type == "sunSafePoint":
+        sunline = sunlineEphem.sunlineEphem()
+        sunline.ModelTag = f"{name}_sunlineEphem"
+        sunline.scPositionInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        sunline.scAttitudeInMsg.subscribeTo(nav_msg)
+        sunline.sunPositionInMsg.subscribeTo(
+            _ephem_from(ctx, ctx.ensure_sun_msg(), "sun")
+        )
+        ctx.add_fsw(sunline)
+        ctx.register_tag(sunline.ModelTag, sunline)
+        ref = sunSafePoint.sunSafePoint()
+        ref.ModelTag = f"{name}_sunSafePoint"
+        ref.sHatBdyCmd = list(guid.sun_axis_B)
+        ref.sunAxisSpinRate = guid.spin_rate
+        ref.sunDirectionInMsg.subscribeTo(sunline.navStateOutMsg)
+        ref.imuInMsg.subscribeTo(nav_msg)
+        apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
+        ctx.add_fsw(ref)
+        ctx.register_tag(ref.ModelTag, ref)
+        bundle.fsw["guidance"] = ref
+        return ref.attGuidanceOutMsg, "guid"
+    if guid.type == "locationPointing":
+        ref = locationPointing.locationPointing()
+        ref.ModelTag = f"{name}_locationPointing"
+        latlon = guid.target_latlon or []
+        ref.pHat_B = list(guid.point_axis_B)
+        ref.cHat_B = list(guid.scan_axis_B)
+        ref.scAttInMsg.subscribeTo(nav_msg)
+        ref.scTransInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        if guid.target_body is not None:
+            ref.celBodyInMsg.subscribeTo(
+                _ephem_for(ctx, guid.target_body, "locationPointing")
+            )
+        elif guid.target_position_N is not None:
+            target = messaging.NavTransMsgPayload()
+            target.r_BN_N = list(guid.target_position_N)
+            ref.scTargetInMsg.subscribeTo(messaging.NavTransMsg().write(target))
+        else:
+            planet = _central_ephem(ctx)
+            if planet is None:
+                raise BuildError(
+                    f"spacecraft {name!r}: locationPointing target_latlon needs "
+                    "the central body's SPICE orientation"
+                )
+            writer = _GroundStateWriter(
+                planet,
+                messaging.GroundStateMsg(),
+                latlon[0],
+                latlon[1],
+                latlon[2],
+                float(ctx.central_body.radEquator),
+                float(ctx.central_body.radEquator)
+                * float(ctx.central_body.radiusRatio),
+            )
+            writer.ModelTag = f"{name}_groundState"
+            ctx.add_fsw(writer)
+            ctx.register_tag(writer.ModelTag, writer)
+            ref.locationInMsg.subscribeTo(writer.out_msg)
+            bundle.fsw["ground_state"] = writer
+        apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
+        ctx.add_fsw(ref)
+        ctx.register_tag(ref.ModelTag, ref)
+        bundle.fsw["guidance"] = ref
+        return ref.attRefOutMsg, "ref"
+    if guid.type == "celestialTwoBodyPoint":
+        ref = celestialTwoBodyPoint.celestialTwoBodyPoint()
+        ref.ModelTag = f"{name}_celestialTwoBodyPoint"
+        ref.transNavInMsg.subscribeTo(_ensure_trans_msg(ctx, bundle))
+        ref.celBodyInMsg.subscribeTo(
+            _ephem_for(ctx, guid.target_body, "celestialTwoBodyPoint")
+        )
+        ref.secCelBodyInMsg.subscribeTo(
+            _ephem_for(ctx, guid.constraint_body, "celestialTwoBodyPoint")
+        )
+        apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
+        ctx.add_fsw(ref)
+        ctx.register_tag(ref.ModelTag, ref)
+        bundle.fsw["guidance"] = ref
+        return ref.attRefOutMsg, "ref"
+    if guid.type == "waypointReference":
+        path = _resolve_scenario_path(ctx, str(guid.waypoint_file))
+        ref = waypointReference.WaypointReference()
+        ref.ModelTag = f"{name}_waypointReference"
+        ref.dataFileName = str(path)
+        ref.delimiter = guid.delimiter
+        ref.attitudeType = guid.attitude_type
+        ref.useReferenceFrame = guid.reference_frame
+        ref.headerLines = guid.header_lines
+        apply_params(ref, guid.params, f"guidance {ref.ModelTag!r}")
+        ctx.add_fsw(ref)
+        ctx.register_tag(ref.ModelTag, ref)
+        bundle.fsw["guidance"] = ref
+        return ref.attRefOutMsg, "ref"
     raise BuildError(f"unsupported guidance type {guid.type!r}")
 
 
@@ -352,6 +683,43 @@ def _build_control(
         ctrl.knownTorquePntB_B = list(control.known_torque)
         ctrl.guidInMsg.subscribeTo(err_msg)
         ctrl.vehConfigInMsg.subscribeTo(bundle.veh_config_msg)
+        if bundle.rw is not None:
+            ctrl.rwParamsInMsg.subscribeTo(bundle.rw.cfg_msg)
+            ctrl.rwSpeedsInMsg.subscribeTo(bundle.rw.effector.rwSpeedOutMsg)
+        apply_params(ctrl, control.params, f"control {ctrl.ModelTag!r}")
+        ctx.add_fsw(ctrl)
+        ctx.register_tag(ctrl.ModelTag, ctrl)
+        return ctrl
+    if control.type == "mrpPD":
+        ctrl = mrpPD.mrpPD()
+        ctrl.ModelTag = f"{bundle.config.name}_mrpPD"
+        ctrl.K = control.k
+        ctrl.P = control.p
+        ctrl.knownTorquePntB_B = list(control.known_torque)
+        ctrl.guidInMsg.subscribeTo(err_msg)
+        ctrl.vehConfigInMsg.subscribeTo(bundle.veh_config_msg)
+        apply_params(ctrl, control.params, f"control {ctrl.ModelTag!r}")
+        ctx.add_fsw(ctrl)
+        ctx.register_tag(ctrl.ModelTag, ctrl)
+        return ctrl
+    if control.type == "rateServo":
+        steering = mrpSteering.mrpSteering()
+        steering.ModelTag = f"{bundle.config.name}_mrpSteering"
+        steering.omega_max = control.max_rate
+        steering.K1 = control.steering_k1
+        steering.K3 = control.steering_k3
+        steering.guidInMsg.subscribeTo(err_msg)
+        ctx.add_fsw(steering)
+        ctx.register_tag(steering.ModelTag, steering)
+        ctrl = rateServoFullNonlinear.rateServoFullNonlinear()
+        ctrl.ModelTag = f"{bundle.config.name}_rateServo"
+        ctrl.P = control.p
+        ctrl.Ki = control.ki
+        ctrl.integralLimit = control.resolved_integral_limit()
+        ctrl.knownTorquePntB_B = list(control.known_torque)
+        ctrl.guidInMsg.subscribeTo(err_msg)
+        ctrl.vehConfigInMsg.subscribeTo(bundle.veh_config_msg)
+        ctrl.rateSteeringInMsg.subscribeTo(steering.rateCmdOutMsg)
         if bundle.rw is not None:
             ctrl.rwParamsInMsg.subscribeTo(bundle.rw.cfg_msg)
             ctrl.rwSpeedsInMsg.subscribeTo(bundle.rw.effector.rwSpeedOutMsg)

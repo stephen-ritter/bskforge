@@ -76,7 +76,7 @@ Every Basilisk object created by the domain builders also accepts a free-form
 module at build time (with did-you-mean errors), so new upstream parameters
 need no bskforge changes.
 
-## Status (Phases 1–4: core + environment + sensors/estimation + effectors)
+## Status (Phases 1–5: core + environment + sensors/estimation + effectors + FSW breadth)
 
 Implemented: TOML loading with `extends` inheritance and friendly errors,
 SPICE-driven worlds (presets, custom point masses, spherical harmonics,
@@ -86,16 +86,18 @@ pinhole landmark-camera sensors, CSS constellations, magnetic field (dipole,
 WMM), atmosphere (exponential, MSIS), penumbra eclipse, gravity-gradient /
 drag / SRP disturbances (cannonball and faceted), `inertial3D` →
 `simpleNav`/`cssWlsEst`/`inertialUKF`/`sunlineSuKF` → `attTrackingError` →
-`mrpFeedback` → `rwMotorTorque` FSW stacks, thruster sets with force-mapping
-and Schmitt/round firing, magnetic torque bars, reaction-wheel momentum
-management (`thrMomentumDumping`, `mtbMomentumManagementSimple`) and
-null-space desaturation, multi-spacecraft scenarios,
-message recorders with CSV/parquet/npz export, Vizard visualization hooks,
-and the `[custom]` escape hatch.
+`mrpFeedback`/`mrpPD`/`rateServo` → `rwMotorTorque` FSW stacks, seven
+guidance laws (`inertial3D`, `velocityPoint`, `hillPoint`, `sunSafePoint`,
+`locationPointing`, `celestialTwoBodyPoint`, `waypointReference`), thruster
+sets with force-mapping and Schmitt/round firing, magnetic torque bars,
+reaction-wheel momentum management (`thrMomentumDumping`,
+`mtbMomentumManagementSimple`) and null-space desaturation,
+multi-spacecraft scenarios, message recorders with CSV/parquet/npz export,
+Vizard visualization hooks, and the `[custom]` escape hatch.
 
-Pending: extended guidance/control laws (Phase 5); comms, formation FSW and
-Monte Carlo (Phase 6). Configuring any pending block fails with a clear phase
-pointer instead of silently ignoring it.
+Pending: comms, formation FSW and Monte Carlo (Phase 6). Configuring any
+pending block fails with a clear phase pointer instead of silently
+ignoring it.
 
 Known Basilisk behavior: recorder samples taken at `t = 0` capture messages
 before their writer modules first execute (Basilisk logs them as

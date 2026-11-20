@@ -8,6 +8,8 @@
 
 """End-to-end build/run tests against the installed Basilisk build."""
 
+import copy
+import math
 from pathlib import Path
 
 import numpy as np
@@ -243,6 +245,10 @@ class TestRun:
                     "mtbSat.mtb_cmds",
                 },
             ),
+            (
+                "guidance_laws.toml",
+                {"chaser.state", "tumor.state"},
+            ),
         ],
     )
     def test_examples_run_short_duration(self, example, expected_streams):
@@ -460,11 +466,23 @@ class TestEstimationAndCameras:
         )
         result = ScenarioRunner(config).run(duration=60.0)
         cols = ["sigma_BN[0]", "sigma_BN[1]", "sigma_BN[2]"]
-        est = result.frames["sc1.nav_state"][cols].to_numpy()
-        truth = result.frames["sc1.state"][cols].to_numpy()
+        est_frame = result.frames["sc1.nav_state"]
+        truth_frame = result.frames["sc1.state"]
+        est = est_frame[cols].to_numpy()
+        t_est = est_frame["time"].to_numpy()
+        t_truth = truth_frame["time"].to_numpy()
+        truth = np.column_stack(
+            [np.interp(t_est, t_truth, truth_frame[col].to_numpy()) for col in cols]
+        )
         assert np.isfinite(est).all()
         assert np.linalg.norm(est[-1]) > 1e-2, "filter never left its zero init"
-        assert np.linalg.norm(est[-1] - truth[-1]) < 1e-3
+        # the residual floor is set by the ST white noise (1e-3/axis); the
+        # mean over the settled quarter is the stable convergence measure
+        tail = slice(len(est) // 4 * 3, None)
+        gap = np.linalg.norm(est[tail] - truth[tail], axis=1)
+        assert gap.mean() < 1.5e-3, (
+            f"filter did not converge: mean gap {gap.mean():.1e}"
+        )
 
     def test_inertial_ukf_requires_star_tracker(self):
         config = validate_scenario(
@@ -998,3 +1016,236 @@ class TestThrustersAndMtb:
         )
         with pytest.raises(BuildError, match="magnetic_field"):
             ScenarioRunner(config).build()
+
+
+# -- Phase 5: guidance laws and control laws -----------------------------
+
+SIGMA = ["sigma_BN[0]", "sigma_BN[1]", "sigma_BN[2]"]
+OMEGA = ["omega_BN_B[0]", "omega_BN_B[1]", "omega_BN_B[2]"]
+
+SPICE_WORLD = {
+    "central_body": "earth",
+    "epoch": "2026-01-01 00:00:00.0 TDB",
+    "spice": {"enabled": True},
+    "gravities": [
+        {"name": "earth", "central": True},
+        {"name": "sun"},
+        {"name": "moon"},
+    ],
+}
+
+_AGILE_HUB = {"mass": 100.0, "inertia": {"ixx": 100.0, "iyy": 90.0, "izz": 80.0}}
+_AGILE_RW = {
+    "type": "reactionWheels",
+    "inertia": 0.05,
+    "wheels": [
+        {"direction_B": [1, 0, 0], "max_torque": 0.5},
+        {"direction_B": [0, 1, 0], "max_torque": 0.5},
+        {"direction_B": [0, 0, 1], "max_torque": 0.5},
+    ],
+}
+
+
+def _guidance_config(
+    guidance: dict,
+    control: dict | None = None,
+    *,
+    world: dict | None = None,
+    duration: float = 300.0,
+    name: str = "sc1",
+) -> dict:
+    """A single agile SC on the 700 km circular equatorial orbit."""
+    spacecraft: dict = {
+        "name": name,
+        "hub": dict(_AGILE_HUB),
+        "orbit": {
+            "type": "elements",
+            "elements": {"a": 7200e3, "e": 0.0, "i": 0.0, "raan": 0.0},
+        },
+        "attitude": {
+            "initial": {
+                "sigma_BN": [0.1, -0.2, 0.05],
+                "omega_BN_B": [0.001, -0.01, 0.03],
+            },
+        },
+        "fsw": {
+            "guidance": guidance,
+            "control": control if control is not None else {"type": "mrpPD"},
+        },
+        "effectors": [copy.deepcopy(_AGILE_RW)],
+    }
+    scenario: dict = {
+        "simulation": {"name": f"guid-{guidance['type']}", "duration": duration},
+        "spacecraft": [spacecraft],
+    }
+    if world is not None:
+        scenario["world"] = dict(world)
+    return scenario
+
+
+class TestGuidanceAndControl:
+    """Each guidance law flies a closed loop; each control law converges."""
+
+    def _tracking_metrics(
+        self,
+        guidance: dict,
+        control: dict,
+        duration: float,
+    ) -> tuple[float, float]:
+        """Final |sigma_BR| (tracking error) and |omega| of the run."""
+        config = validate_scenario(
+            _guidance_config(guidance, control, world=SPICE_WORLD, duration=duration)
+        )
+        built = ScenarioRunner(config).build()
+        ctx = built.context
+        err = ctx.modules_by_tag["sc1_attErr"]
+        recorder = err.attGuidOutMsg.recorder(int(1e9))
+        ctx.sim.AddModelToTask("fswTask", recorder, ModelPriority=1)
+        ctx.sim.ConfigureStopTime(int(duration * 1e9))
+        ctx.sim.InitializeSimulation()
+        ctx.sim.ExecuteSimulation()
+        sigma_br = np.array(recorder.sigma_BR)[-1]
+        state = np.array(
+            [float(x) for x in ctx.bundles["sc1"].sc.scStateOutMsg.read().omega_BN_B]
+        )
+        return float(np.linalg.norm(sigma_br)), float(np.linalg.norm(state))
+
+    def test_hill_point_holds_lvlh(self):
+        err_norm, omega = self._tracking_metrics(
+            {"type": "hillPoint"}, {"type": "mrpPD"}, 300.0
+        )
+        assert err_norm < 1e-3
+        # LVLH is a rotating frame: the body spins at the orbital rate
+        n = math.sqrt(3.986004418e14 / 7200e3**3)
+        assert omega == pytest.approx(n, rel=0.05)
+
+    def test_velocity_point_tracks_velocity(self):
+        err_norm, omega = self._tracking_metrics(
+            {"type": "velocityPoint"}, {"type": "rateServo", "max_rate": 0.05}, 300.0
+        )
+        assert err_norm < 1e-3
+        n = math.sqrt(3.986004418e14 / 7200e3**3)
+        assert omega == pytest.approx(n, rel=0.05)
+
+    def test_sun_safe_point_aligns_body_axis(self):
+        # plain SimpleNav world: vehSunPntBdy = +X, so the loop must
+        # simply damp out -- the axis already points at the sun
+        config = validate_scenario(
+            _guidance_config(
+                {"type": "sunSafePoint", "sun_axis_B": [1.0, 0.0, 0.0]},
+                world=None,
+                duration=120.0,
+            )
+        )
+        result = ScenarioRunner(config).run(duration=120.0)
+        frame = result.frames["sc1.state"]
+        assert np.isfinite(frame.to_numpy()).all()
+        assert np.linalg.norm(frame[OMEGA].to_numpy()[-1]) < 0.02
+
+    def test_waypoint_reference_follows_file(self, tmp_path):
+        waypoints = tmp_path / "waypoints.csv"
+        zero = "0.0,0.0,0.0"
+        rows = [
+            f"{t},{satt},{zero},{zero}"
+            for t, satt in (
+                (0.0, "0.0,0.0,0.0"),
+                (300.0, "0.1,-0.1,0.05"),
+                (600.0, "0.05,-0.2,0.0"),
+            )
+        ]
+        waypoints.write_text(
+            "time,s0,s1,s2,w0,w1,w2,dw0,dw1,dw2\n" + "\n".join(rows) + "\n",
+            newline="",
+        )
+        config = validate_scenario(
+            _guidance_config(
+                {
+                    "type": "waypointReference",
+                    "waypoint_file": str(waypoints),
+                    "header_lines": 1,
+                },
+                world=None,
+                duration=620.0,
+            )
+        )
+        # record the reference message itself: the file row must pass
+        # through the module untouched once the final waypoint is active
+        built = ScenarioRunner(config).build()
+        ctx = built.context
+        recorder = ctx.modules_by_tag["sc1_waypointReference"].attRefOutMsg.recorder(
+            1_000_000_000
+        )
+        ctx.sim.AddModelToTask("fswTask", recorder, ModelPriority=1)
+        ctx.sim.ConfigureStopTime(620_000_000_000)
+        ctx.sim.InitializeSimulation()
+        ctx.sim.ExecuteSimulation()
+        sigma_rn = np.array(recorder.sigma_RN)[-1]
+        assert np.allclose(sigma_rn, [0.05, -0.2, 0.0], atol=1e-9)
+
+    def test_location_pointing_holds_ground_site(self):
+        config = validate_scenario(
+            _guidance_config(
+                {"type": "locationPointing", "target_latlon": [0.0, 0.0, 0.0]},
+                world=SPICE_WORLD,
+                duration=600.0,
+            )
+        )
+        result = ScenarioRunner(config).run(duration=600.0)
+        frame = result.frames["sc1.state"]
+        assert np.isfinite(frame.to_numpy()).all()
+        # the closed loop tracks a rotating target (Earth rotation), so
+        # the steady body rate is non-zero but small and the attitude is
+        # stable, not tumbling
+        assert np.linalg.norm(frame[OMEGA].to_numpy()[-1]) < 0.05
+
+    def test_two_body_point_moon_sun(self):
+        config = validate_scenario(
+            _guidance_config(
+                {
+                    "type": "celestialTwoBodyPoint",
+                    "target_body": "moon",
+                    "constraint_body": "sun",
+                },
+                world=SPICE_WORLD,
+                duration=120.0,
+            )
+        )
+        result = ScenarioRunner(config).run(duration=120.0)
+        frame = result.frames["sc1.state"]
+        assert np.isfinite(frame.to_numpy()).all()
+        assert np.linalg.norm(frame[OMEGA].to_numpy()[-1]) < 0.02
+
+    def test_mrp_pd_and_rate_servo_build_same_reference(self):
+        # the two control laws must consume the same reference chain
+        for control in ({"type": "mrpPD"}, {"type": "rateServo"}):
+            err_norm, _ = self._tracking_metrics({"type": "hillPoint"}, control, 180.0)
+            assert err_norm < 5e-3, control["type"]
+
+    def test_location_pointing_rejects_two_targets(self):
+        with pytest.raises(ConfigError, match="exactly one of"):
+            validate_scenario(
+                _guidance_config(
+                    {
+                        "type": "locationPointing",
+                        "target_latlon": [0.0, 0.0, 0.0],
+                        "target_body": "moon",
+                    },
+                    world=SPICE_WORLD,
+                )
+            )
+
+    def test_two_body_point_requires_spice(self):
+        with pytest.raises(ConfigError, match="spice"):
+            validate_scenario(
+                _guidance_config(
+                    {"type": "celestialTwoBodyPoint", "target_body": "moon"}
+                )
+            )
+
+    def test_location_pointing_latlon_requires_spice(self):
+        with pytest.raises(ConfigError, match="spice"):
+            validate_scenario(
+                _guidance_config(
+                    {"type": "locationPointing", "target_latlon": [1.0, 2.0, 0.0]}
+                )
+            )

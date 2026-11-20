@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from bskforge.schema.base import PassthroughModel, Vec3
 
@@ -36,7 +36,125 @@ class Inertial3DGuidance(PassthroughModel):
     sigma_R0N: Vec3 = [0.0, 0.0, 0.0]
 
 
-GuidanceConfig = Annotated[Inertial3DGuidance, Field(discriminator="type")]
+class VelocityPointGuidance(PassthroughModel):
+    """Velocity (ram) pointing: ``type = "velocityPoint"``.
+
+    Points the mission axis along the velocity vector of the orbit.
+    """
+
+    type: Literal["velocityPoint"] = "velocityPoint"
+    mu: float | None = Field(
+        None,
+        gt=0,
+        description="Central-body gravitational parameter "
+        "[m^3/s^2]; taken from the world's central body when unset",
+    )
+
+
+class HillPointGuidance(PassthroughModel):
+    """LVLH (nadir) pointing: ``type = "hillPoint"``."""
+
+    type: Literal["hillPoint"] = "hillPoint"
+
+
+class SunSafePointGuidance(PassthroughModel):
+    """Sun-safe pointing: ``type = "sunSafePoint"``.
+
+    Steers ``sun_axis_B`` at the sun, optionally spinning about the
+    sunline. The sun direction comes from the vehicle's navigation state
+    and the ``[world]`` sun ephemeris; the module output feeds the control
+    law directly (it emits a tracking error, not a reference frame).
+    """
+
+    type: Literal["sunSafePoint"] = "sunSafePoint"
+    sun_axis_B: Vec3 = [1.0, 0.0, 0.0]
+    spin_rate: float = Field(
+        0.0, description="Spin about the sunline [rad/s] when the sun is not visible"
+    )
+
+
+class LocationPointingGuidance(PassthroughModel):
+    """Ground/body/target pointing: ``type = "locationPointing"``.
+
+    Exactly one target: ``target_body`` (another gravity body),
+    ``target_latlon`` (a point fixed on the central body, requiring
+    SPICE planet orientation) or ``target_position_N`` (a fixed inertial
+    position).
+    """
+
+    type: Literal["locationPointing"] = "locationPointing"
+    target_body: str | None = None
+    target_latlon: list[float] | None = Field(
+        None,
+        description="[latitude, longitude, elevation] [deg, deg, m] "
+        "on the central body",
+    )
+    target_position_N: Vec3 | None = None
+    point_axis_B: Vec3 = [1.0, 0.0, 0.0]
+    scan_axis_B: Vec3 = [0.0, 1.0, 0.0]
+
+    @model_validator(mode="after")
+    def _one_target(self) -> LocationPointingGuidance:
+        targets = [
+            self.target_body is not None,
+            self.target_latlon is not None,
+            self.target_position_N is not None,
+        ]
+        if sum(targets) != 1:
+            raise ValueError(
+                "locationPointing needs exactly one of target_body, "
+                "target_latlon or target_position_N"
+            )
+        if self.target_latlon is not None and len(self.target_latlon) != 3:
+            raise ValueError("target_latlon is [lat_deg, lon_deg, elev_m]")
+        return self
+
+
+class CelestialTwoBodyPointGuidance(PassthroughModel):
+    """Two-body constrained pointing: ``type = "celestialTwoBodyPoint"``.
+
+    Points at ``target_body`` while keeping the ``constraint_body`` (the
+    sun by default) in a safe cone; both bodies need SPICE ephemerides.
+    """
+
+    type: Literal["celestialTwoBodyPoint"] = "celestialTwoBodyPoint"
+    target_body: str
+    constraint_body: str = "sun"
+
+
+class WaypointReferenceGuidance(PassthroughModel):
+    """File-driven attitude timeline: ``type = "waypointReference"``.
+
+    Attributes:
+        waypoint_file: CSV/TXT with columns time, attitude, rate and
+            angular acceleration per row (relative paths resolve against
+            the scenario file's directory).
+        delimiter: Column separator.
+        attitude_type: 0 = MRP, 1 = quaternion (w, x, y, z),
+            2 = quaternion (x, y, z, w).
+        reference_frame: Rates/accelerations expressed in the reference
+            frame (True) or the inertial frame (False).
+        header_lines: Rows to skip at the top of the file.
+    """
+
+    type: Literal["waypointReference"] = "waypointReference"
+    waypoint_file: str
+    delimiter: str = ","
+    attitude_type: Literal[0, 1, 2] = 0
+    reference_frame: bool = False
+    header_lines: int = Field(0, ge=0)
+
+
+GuidanceConfig = Annotated[
+    Inertial3DGuidance
+    | VelocityPointGuidance
+    | HillPointGuidance
+    | SunSafePointGuidance
+    | LocationPointingGuidance
+    | CelestialTwoBodyPointGuidance
+    | WaypointReferenceGuidance,
+    Field(discriminator="type"),
+]
 
 
 # --- Estimator -------------------------------------------------------------
@@ -130,7 +248,52 @@ class MrpFeedbackControl(PassthroughModel):
         return 2.0 / self.ki * 0.1
 
 
-ControlConfig = Annotated[MrpFeedbackControl, Field(discriminator="type")]
+class MrpPdControl(PassthroughModel):
+    """MRP + rate PD control: ``type = "mrpPD"``.
+
+    A pure PD law (no integral action) with inertia-weighted rate term.
+    """
+
+    type: Literal["mrpPD"] = "mrpPD"
+    k: float = Field(3.5, description="Position gain on sigma_eb")
+    p: float = Field(30.0, description="Rate gain on omega_bn")
+    known_torque: Vec3 = [0.0, 0.0, 0.0]
+
+
+class RateServoControl(PassthroughModel):
+    """Steering + rate-servo control: ``type = "rateServo"``.
+
+    Chains ``mrpSteering`` (generates a rate command bounded by
+    ``max_rate``) into ``rateServoFullNonlinear`` (PI rate tracking with
+    wheel-space decomposition when wheels are configured).
+    """
+
+    type: Literal["rateServo"] = "rateServo"
+    p: float = 150.0
+    ki: float = 0.01
+    integral_limit: float | None = Field(None, gt=0)
+    known_torque: Vec3 = [0.0, 0.0, 0.0]
+    max_rate: float = Field(0.005, gt=0, description="Steering rate limit [rad/s]")
+    steering_k1: float = Field(
+        1.0, description="mrpSteering linear gain K1 on the error MRP"
+    )
+    steering_k3: float = Field(
+        0.0, description="mrpSteering cubic gain K3 on the error MRP"
+    )
+
+    def resolved_integral_limit(self) -> float:
+        """Return the explicit limit, or derive it from ``ki``."""
+        if self.integral_limit is not None:
+            return self.integral_limit
+        if self.ki <= 0:
+            return 0.0
+        return 2.0 / self.ki * 0.1
+
+
+ControlConfig = Annotated[
+    MrpFeedbackControl | MrpPdControl | RateServoControl,
+    Field(discriminator="type"),
+]
 
 
 # --- Allocation ------------------------------------------------------------

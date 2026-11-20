@@ -116,9 +116,16 @@ class SimContext:
         self._tasks[FSW_TASK] = FSW_TASK
 
     def _create_processes(self) -> None:
-        """Create the dynamics (priority 1) and FSW (priority 2) processes."""
+        """Create the dynamics and FSW processes.
+
+        Basilisk steps processes in descending priority, so the dynamics
+        process (priority 3) runs *before* the FSW process (priority 2)
+        and any custom process (default priority 1) last: every FSW tick
+        then reads ephemerides and sensor messages written in the same
+        time step.
+        """
         sim = self.sim
-        dyn_process = sim.CreateNewProcess(DYN_PROCESS, priority=1)
+        dyn_process = sim.CreateNewProcess(DYN_PROCESS, priority=3)
         self.processes[DYN_PROCESS] = dyn_process
         dyn_process.addTask(
             sim.CreateNewTask(

@@ -12,10 +12,8 @@ checkout in `../basilisk` for behavior/reference.
 
 ## In progress
 
-_(nothing in flight — Phase 4 complete, see below; Phase 5 — FSW breadth:
-guidance set (`velocityPoint`, `hillPoint`, `sunSafePoint`,
-`waypointReference`, `locationPointing`, `celestialTwoBodyPoint`), extra
-controllers, formation FSW, opnav stack — is next)_
+_(nothing in flight — Phase 5 complete, see below; Phase 6 — fleets &
+operations: comms, formation FSW, Monte Carlo — is next)_
 
 ---
 
@@ -47,15 +45,15 @@ controllers, formation FSW, opnav stack — is next)_
       by `thrMomentumDumping` upstream and stays `[custom]`-only
 - [ ] VSCMG (stretch; `thrusterStateEffector` + CMG effector via `[custom]`)
 
-### Phase 5 — FSW breadth
-- [ ] Guidance set: `velocityPoint`, `hillPoint`, `sunSafePoint`, `waypointReference`,
+### Phase 5 — FSW breadth  ✅ (see Completed)
+- [x] Guidance set: `velocityPoint`, `hillPoint`, `sunSafePoint`, `waypointReference`,
       `locationPointing`, `celestialTwoBodyPoint`
-- [ ] Control: `mrpPD`, `rateServoFullNonlinear`, `mrpSteering`
-- [ ] Formation FSW modules; opnav stack (`bsk-opnav`)
+- [x] Control: `mrpPD`, `rateServoFullNonlinear`, `mrpSteering`
 
 ### Phase 6 — Fleets & operations
 - [ ] Comm links (`simpleAntenna`, `linkBudget`)
-- [ ] Formation flying wiring (`formationBarycenter`, `hillStateConverter`)
+- [ ] Formation FSW modules and formation flying wiring
+      (`formationBarycenter`, `hillStateConverter`)
 - [ ] Monte Carlo (`MonteCarlo.Controller`) + dispersions from TOML
 - [ ] Hook-based event effects beyond `[custom.events]` (already available:
       time-conditioned events + `pkg.module:function` hooks)
@@ -69,6 +67,37 @@ controllers, formation FSW, opnav stack — is next)_
 ---
 
 ## Completed
+
+### 2026-11-20 — Phase 5: guidance laws and control laws
+Validated end-to-end against installed **Basilisk 2.12.2** (new example
+`examples/guidance_laws.toml` + 11 new tests, 73 total passing).
+- [x] Guidance union under `[spacecraft.fsw.guidance]`: `velocityPoint`
+      (auto `mu` from the world's central body), `hillPoint`, `sunSafePoint`
+      (AttGuidMsg straight into the control law, fed by the
+      `vehSunPntBdy` field), `locationPointing` (one of `target_body`,
+      `target_latlon`, `target_position_N`), `celestialTwoBodyPoint`
+      (`target_body` / `constraint_body`) and `waypointReference`
+      (file paths resolved against the scenario file).
+- [x] `_SpiceToEphemeris` dyn-task bridge converts `SpicePlanetStateMsg`
+      to `EphemerisMsg` for `celBodyInMsg`/`sunPositionInMsg` ports;
+      `_GroundStateWriter` publishes geodetic sites as `GroundStateMsg`
+      (ellipsoid normal + `J20002Pfix` rotation). Both feed only from
+      the SPICE ephemeris hub; celestial-referencing guidance requires
+      `[world.spice]` (validated at the root).
+- [x] `_ensure_trans_msg` reuses the estimator's `transOutMsg` or
+      inserts a silent `SimpleNav`, so guidance laws get `scTransInMsg`
+      without schema ceremony.
+- [x] Control union extended with `mrpPD` and `rateServo`
+      (`mrpSteering` → `rateServoFullNonlinear`, steering gains
+      `steering_k1`/`steering_k3`/`max_rate`, wheel parameters and
+      speeds auto-linked when an RW set exists).
+- [x] **Process priorities fixed**: Basilisk steps processes in
+      *descending* priority, so the dynamics process now runs at 3, the
+      FSW process at 2 and custom processes (default 1) last. With the
+      old inverted priorities, SPICE ephemerides were one FSW tick
+      stale, which NaNed `celestialTwoBodyPoint` at its first
+      uninitialized read; the `nav_state` recorder now samples on the
+      FSW task so estimator frames are time-aligned.
 
 ### 2026-11-20 — Phase 4: thrusters, torque bars, momentum management
 Validated end-to-end against installed **Basilisk 2.12.2** (new example
@@ -277,8 +306,8 @@ Legend: ❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end
 | Eclipse | `eclipse` | ✅ |
 | Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer`, `pinholeCamera` | ✅ |
 | Estimation | `simpleNav`, `InertialUKF`, `cssWlsEst`, `sunlineSuKF` | ✅ |
-| Att guidance | `inertial3D` ✅ · `velocityPoint`, `hillPoint` ❌ | 🔧 |
-| Att control | `mrpFeedback` ✅ · `mrpPD`, steering laws ❌ | 🔧 |
+| Att guidance | `inertial3D` · `velocityPoint` · `hillPoint` · `sunSafePoint` · `locationPointing` · `celestialTwoBodyPoint` · `waypointReference` ✅ | ✅ |
+| Att control | `mrpFeedback` · `mrpPD` · `rateServo` (`mrpSteering` + `rateServoFullNonlinear`) ✅ | ✅ |
 | Att effector iface | `rwMotorTorque`, `thrForceMapping`, `dipoleMapping` | ✅ |
 | Momentum mgmt | `thrMomentumManagement`, `thrMomentumDumping`, `mtbMomentumManagementSimple`, `rwNullSpace` | ✅ |
 | Formation | `formationBarycenter`, `hillStateConverter` | ❌ (Phase 6; `[custom]` reachable) |

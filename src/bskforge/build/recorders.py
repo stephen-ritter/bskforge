@@ -60,6 +60,7 @@ def build_recorders(ctx: SimContext) -> None:
                 f"{name}.nav_state",
                 bundle.estimator_msg,
                 RecorderConfig(),
+                task="fswTask",
             )
 
         if bundle.thruster is not None and bundle.thruster.cmd_src_msg is not None:
@@ -87,8 +88,14 @@ def _record(
     key: str,
     msg: Any,
     cfg: RecorderConfig | None,
+    task: str = "dynamicsTask",
 ) -> None:
-    """Create one recorder on ``msg`` and register it for export."""
+    """Create one recorder on ``msg`` and register it for export.
+
+    Recorders for FSW-produced messages run on the FSW task (auto
+    priority, i.e. after their producers within the same step) so their
+    samples are time-aligned with the inputs that generated them.
+    """
     if cfg is None or not cfg.enabled:
         return
     sample_time = cfg.sample_time
@@ -99,5 +106,8 @@ def _record(
             ctx.config.logging.default_num_points,
         )
     recorder = msg.recorder(int(sample_time))
-    ctx.add_dyn(recorder, priority=100)
+    if task == "dynamicsTask":
+        ctx.add_dyn(recorder, priority=100)
+    else:
+        ctx.add_to_task(task, recorder)
     bundle.recorders.append(RecorderSpec(key=key, recorder=recorder))
