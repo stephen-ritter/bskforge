@@ -20,6 +20,9 @@ output/
 out/
 *.bin
 
+# Scratch / dev notes
+scratch/
+
 # Editors / OS
 .idea/
 .vscode/

@@ -1,23 +1,105 @@
+#
+#  ISC License
+#
+#  Copyright (c) 2026, Autonomous Vehicle Systems Lab, University of
+#  Colorado at Boulder
+#
+#  Permission to use, copy, modify, and/or distribute this software for
+#  any purpose with or without fee is hereby granted, provided that the
+#  above copyright notice and this permission notice appear in all copies.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+#  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+#  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+#  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+#  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+#  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bsk-toml-sim"
-version = "0.1.0"
-description = "TOML-based simulation configuration for Basilisk"
+name = "bskforge"
+version = "0.2.0"
+description = "Forge and run Basilisk spacecraft simulations from declarative scenario files"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.16"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
 dependencies = [
-    "pydantic>=2.0",
-    "pydantic-settings>=2.0",
+    "bsk[all]>=2.12.0",
+    "pydantic>=2.7",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-cov",
+    "ruff",
+    "ty",
 ]
+
+[project.scripts]
+bskforge = "bskforge.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Lint & format: ruff (also import-sorting and docstring style)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+extend-exclude = [".venv", "_VizFiles"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "RUF", # ruff-specific
+    "ANN", # type annotations
+    "D",   # pydocstyle
+]
+ignore = [
+    "ANN401",  # allow Any for Basilisk SWIG objects
+    "D203",    # handled by D211
+    "D213",    # handled by D212
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# Static typing: ty (strict on our schema; Basilisk has no stubs)
+# ---------------------------------------------------------------------------
+[tool.ty.environment]
+python-version = "3.11"
+python = "./.venv"
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.rules]
+# Basilisk ships SWIG bindings without type stubs; unresolved imports there
+# are expected and must not mask errors in our own typed code.
+unresolved-import = "warn"
