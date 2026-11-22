@@ -101,6 +101,34 @@ class MagnetometerConfig(PassthroughModel):
     recorder: RecorderConfig = Field(default_factory=RecorderConfig)
 
 
+class GpsReceiverConfig(PassthroughModel):
+    """GNSS receiver: ``type = "gpsReceiver"``.
+
+    The plant's opinion of position and velocity: Basilisk's native
+    ``SimpleNav`` superimposes an 18-state Gauss-Markov error process on the
+    true translational state and writes the estimate to ``navTransMsg``.
+    The declared sigmas set the noise strength of the position and velocity
+    states (three-sigma safety bounds on the draws, per Basilisk's own unit
+    tests the error can never leave); the remaining states stay silent: a
+    receiver fixes the orbit, not the attitude. The fixed default seed keeps
+    the noise realization independent of the vehicle's name: renaming a
+    spacecraft must never re-draw its instrument's luck.
+
+    Attributes:
+        name: Sensor ModelTag; unique within the vehicle.
+        pos_sigma_m: Position error scale [m].
+        vel_sigma_m_s: Velocity error scale [m/s].
+        rng_seed: Basilisk RNG seed for the error process (non-zero).
+    """
+
+    type: Literal["gpsReceiver"] = "gpsReceiver"
+    name: str = "gnss"
+    pos_sigma_m: float = Field(15.0, gt=0, description="Position error sigma [m]")
+    vel_sigma_m_s: float = Field(0.01, gt=0, description="Velocity error sigma [m/s]")
+    rng_seed: int = Field(0x475053, ge=1, description="Error-process RNG seed")
+    recorder: RecorderConfig = Field(default_factory=RecorderConfig)
+
+
 class LandmarkConfig(ScenarioModel):
     """A fixed landmark on the camera's target body.
 
@@ -173,6 +201,7 @@ SensorConfig = Annotated[
     | StarTrackerConfig
     | ImuSensorConfig
     | MagnetometerConfig
+    | GpsReceiverConfig
     | CameraConfig,
     Field(discriminator="type"),
 ]

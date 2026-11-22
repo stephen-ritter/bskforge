@@ -110,7 +110,7 @@ Implemented: TOML loading with `extends` inheritance and friendly errors,
 SPICE-driven worlds (presets, custom point masses, spherical harmonics,
 third-body perturbations, sun-centered frames), hub + orbit/attitude initial
 state, reaction-wheel effectors, CSS / star tracker / IMU / magnetometer /
-pinhole landmark-camera sensors, CSS constellations, magnetic field (dipole,
+GNSS-receiver / pinhole landmark-camera sensors, CSS constellations, magnetic field (dipole,
 WMM), atmosphere (exponential, MSIS), penumbra eclipse, gravity-gradient /
 drag / SRP disturbances (cannonball and faceted), `inertial3D` →
 `simpleNav`/`cssWlsEst`/`inertialUKF`/`sunlineSuKF` → `attTrackingError` →

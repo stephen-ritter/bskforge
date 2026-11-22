@@ -69,6 +69,24 @@ _(MuJoCo scenes stays a stretch goal; parked with Phase 7)_
 
 ## Completed
 
+### 2026-11-22 — Sensors: `gpsReceiver` (plant GNSS via native SimpleNav)
+First-class `[[spacecraft.sensors]] type = "gpsReceiver"`:
+`GpsReceiverConfig` (named `pos_sigma_m` / `vel_sigma_m_s` / `rng_seed`,
+no `params` stretching) builds Basilisk's `SimpleNav` — the declared
+sigmas become the Gauss-Markov noise matrix plus its three-sigma walk
+bounds (Basilisk warns below 3σ, and its own unit tests treat the bounds
+as the hard clamp on every error state); the attitude and DV states stay
+exactly zero: a receiver fixes the orbit, not a rumor about attitude.
+`rng_seed` defaults to a constant ("GPS"), so renaming a spacecraft can
+never re-draw its instrument's luck. Recorded as `navTransMsg` through
+the standard output-message map. Three new `TestGpsReceiver` tests
+(build; fix differs from truth within the declared scale — clamp and
+floor both asserted; noise bit-identical across re-runs); the generated
+reference test now counts six sensor kinds and `gpsReceiver` by name.
+Requested from the orrery project as D13/KN2: the fleet TOML is the
+vehicle manifest, so the GNSS opinion had to come from a declared part,
+not scenario code. 107 tests, ruff/format/ty green.
+
 ### 2026-11-20 — Documentation: Basilisk-upgrade playbook
 Added an "Upgrading Basilisk" section to `README.md`: the three uptake
 tiers for upstream changes (free `params` passthrough, free `[custom]`

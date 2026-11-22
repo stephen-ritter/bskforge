@@ -158,10 +158,11 @@ class TestGeneratedReference:
         # discriminated unions list their kinds, defaults are shown
         assert "velocityPoint" in md
         assert "orbit_elements" in md
+        assert "gpsReceiver" in md
         assert "`600.0`" in md  # simulation.duration default
         # tables shared by union variants are hoisted once
         assert md.count("### `[[spacecraft.sensors]].recorder`") == 1
-        assert md.count("### `[[spacecraft.sensors]]` — ") == 5
+        assert md.count("### `[[spacecraft.sensors]]` — ") == 6
 
     def test_toml_template_lists_fields_with_defaults(self):
         import tomllib

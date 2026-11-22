@@ -21,6 +21,7 @@ from Basilisk.simulation import (
     ephemerisConverter,
     imuSensor,
     magnetometer,
+    simpleNav,
     starTracker,
 )
 from Basilisk.utilities import macros
@@ -32,6 +33,7 @@ from bskforge.errors import BuildError
 from bskforge.schema.sensors import (
     CameraConfig,
     CoarseSunSensorConfig,
+    GpsReceiverConfig,
     ImuSensorConfig,
     MagnetometerConfig,
     StarTrackerConfig,
@@ -143,6 +145,29 @@ def _build_magnetometer(
     if cfg.noise_sigma is not None:
         _seed_rng(sensor)
     _finalize(ctx, bundle, sensor, cfg)
+
+
+@sensor_builder("gpsReceiver")
+def _build_gps_receiver(
+    ctx: SimContext, bundle: SpacecraftBundle, cfg: GpsReceiverConfig
+) -> None:
+    """Instantiate a GNSS receiver: native SimpleNav, orbit states only.
+
+    ``SimpleNav`` reads the true state and writes truth plus its own
+    Gauss-Markov error process to ``navTransMsg``. Only the position and
+    velocity rows of the 18-state error are given scale: the attitude and
+    rate errors stay exactly zero, so the message is a fix, not a rumor
+    about orientation.
+    """
+    nav = simpleNav.SimpleNav()
+    nav.ModelTag = f"{bundle.config.name}_{cfg.name}"
+    sigma = [cfg.pos_sigma_m] * 3 + [cfg.vel_sigma_m_s] * 3 + [0.0] * 12
+    nav.PMatrix = np.diag(sigma)
+    nav.walkBounds = [3.0 * s for s in sigma]
+    nav.RNGSeed = int(cfg.rng_seed)
+    nav.scStateInMsg.subscribeTo(bundle.sc.scStateOutMsg)
+    apply_params(nav, cfg.params, f"sensor {nav.ModelTag!r}")
+    _finalize(ctx, bundle, nav, cfg)
 
 
 @sensor_builder("camera")
@@ -259,6 +284,8 @@ def _sensor_output_message(sensor: Any, type_name: str) -> Any:
         return sensor.sensorOutMsg
     if type_name == "magnetometer":
         return sensor.tamDataOutMsg
+    if type_name == "gpsReceiver":
+        return sensor.transOutMsg
     raise BuildError(f"no output message mapping for sensor type {type_name!r}")
 
 

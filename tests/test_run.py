@@ -458,6 +458,74 @@ def _css_cluster(name: str) -> dict:
     }
 
 
+class TestGpsReceiver:
+    """``type = "gpsReceiver"``: a plant GNSS fix via native SimpleNav."""
+
+    @staticmethod
+    def _scenario():
+        return validate_scenario(
+            {
+                "simulation": {"name": "gnss", "duration": 300.0},
+                "spacecraft": [
+                    {
+                        "name": "sc1",
+                        "orbit": {"type": "elements", "elements": {"a": 7000e3}},
+                        "sensors": [{"type": "gpsReceiver", "name": "gnss"}],
+                    }
+                ],
+            }
+        )
+
+    @staticmethod
+    def _fix_minus_truth(result):
+        """|ΔR|, |ΔV| against truth, on the receiver's own samples."""
+        nav = result.frames["sc1.gnss"]
+        nav = nav[nav["timeTag"] > 0]  # after SimpleNav's first write
+        state = result.frames["sc1.state"]
+        idx = np.clip(
+            np.searchsorted(state["time"].to_numpy(), nav["time"].to_numpy()),
+            0,
+            len(state) - 1,
+        )
+        dr = np.linalg.norm(
+            nav[["r_BN_N[0]", "r_BN_N[1]", "r_BN_N[2]"]].to_numpy()
+            - state[["r_BN_N[0]", "r_BN_N[1]", "r_BN_N[2]"]].to_numpy()[idx],
+            axis=1,
+        )
+        dv = np.linalg.norm(
+            nav[["v_BN_N[0]", "v_BN_N[1]", "v_BN_N[2]"]].to_numpy()
+            - state[["v_BN_N[0]", "v_BN_N[1]", "v_BN_N[2]"]].to_numpy()[idx],
+            axis=1,
+        )
+        return dr, dv
+
+    def test_gps_receiver_builds(self):
+        built = ScenarioRunner(self._scenario()).build()
+        assert "sc1_gnss" in built.context.modules_by_tag
+
+    def test_fix_differs_from_truth_within_declared_scale(self):
+        result = ScenarioRunner(self._scenario()).run(duration=300.0)
+        dr, dv = self._fix_minus_truth(result)
+        pos_sigma, vel_sigma = 15.0, 0.01
+        # Basilisk's Gauss-Markov clamps every state component at its
+        # three-sigma bound, so the norm can never leave the cube's diagonal;
+        # and a working receiver must actually disagree with truth.
+        assert dr.max() <= 3.0 * np.sqrt(3.0) * pos_sigma
+        assert np.median(dr) >= 0.1 * pos_sigma
+        assert dv.max() <= 3.0 * np.sqrt(3.0) * vel_sigma
+        assert np.median(dv) >= 0.1 * vel_sigma
+        nav = result.frames["sc1.gnss"]
+        written = nav["timeTag"].to_numpy() > 0
+        assert nav["vehAccumDV[0]"].to_numpy()[written].max() == 0.0
+
+    def test_noise_is_deterministic_across_runs(self):
+        first = ScenarioRunner(self._scenario()).run(duration=120.0)
+        second = ScenarioRunner(self._scenario()).run(duration=120.0)
+        nav_a = first.frames["sc1.gnss"]
+        nav_b = second.frames["sc1.gnss"]
+        assert nav_a[nav_a["timeTag"] > 0].equals(nav_b[nav_b["timeTag"] > 0])
+
+
 class TestEstimationAndCameras:
     def test_css_wls_estimator_recovers_sun_direction(self):
         config = validate_scenario(
