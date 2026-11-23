@@ -6,15 +6,14 @@
 #
 #  See LICENSE for full terms.
 
-"""Shared builder helpers: param passthrough and unsupported-phase errors."""
+"""Shared builder helpers: validated parameter passthrough."""
 
 from __future__ import annotations
 
 import difflib
-from collections.abc import Callable
 from typing import Any
 
-from bskforge.errors import BuildError, UnsupportedError
+from bskforge.errors import BuildError
 
 
 def apply_params(module: Any, params: dict[str, Any], label: str) -> None:
@@ -42,19 +41,3 @@ def apply_params(module: Any, params: dict[str, Any], label: str) -> None:
                 "Basilisk module documentation for this build"
             )
         setattr(module, key, value)
-
-
-def unsupported(feature: str, phase: str) -> Callable[..., Any]:
-    """Return a builder that reports ``feature`` as not yet implemented.
-
-    Args:
-        feature: The configured block name.
-        phase: The roadmap phase that lands the feature.
-    """
-
-    def _raise(*_args: Any, **_kwargs: Any) -> Any:
-        raise UnsupportedError(
-            f"{feature} is scheduled for {phase}; see ROADMAP.md coverage checklist"
-        )
-
-    return _raise

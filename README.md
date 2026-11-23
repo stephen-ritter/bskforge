@@ -68,7 +68,7 @@ Multiple vehicles are declared with additional `[[spacecraft]]` tables; global
 `[world]` / `[environment]` defaults can be overridden per vehicle. Scenario
 files can inherit from another file with `extends = "base.toml"`.
 
-## Guaranteed coverage: the `[custom]` escape hatch
+## The `[custom]` escape hatch
 
 Anything the domain sections do not model yet is still expressible: the
 `[custom]` section exposes Basilisk's native graph primitives directly —
@@ -168,36 +168,6 @@ before their writer modules first execute (Basilisk logs them as
 "not properly initialized" warnings once per stream); all later samples are
 full-rate data.
 
-## Basilisk coverage
-
-What the format covers end to end, by Basilisk module family — legend:
-❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end.
-
-| Family | Module examples | Status |
-| --- | --- | --- |
-| Dynamics hub | `spacecraft` | ✅ |
-| Gravity/world | `simIncludeGravBody`, SPICE, sph-harm, third-body | ✅ (polyhedral via `[custom]`) |
-| Reaction wheels | `reactionWheelStateEffector`, `simIncludeRW` | ✅ |
-| Thrusters | `thrusterStateEffector`, `thrusterDynamicEffector` | ✅ (state-model thrusters via `[custom]`) |
-| MTB | `MtbEffector` | ✅ |
-| SRP | `radiationPressure`, `facetSRPDynamicEffector` | ✅ |
-| Drag | `dragDynamicEffector`, `facetDragDynamicEffector` | ✅ |
-| Magnetic field | `magneticFieldWMM`, `magneticFieldCenteredDipole` | ✅ |
-| Atmosphere | `ExponentialAtmosphere`, `MsisAtmosphere` | ✅ (2.12 has no wind model) |
-| Eclipse | `eclipse` | ✅ |
-| Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer`, `pinholeCamera` | ✅ |
-| Estimation | `simpleNav`, `InertialUKF`, `cssWlsEst`, `sunlineSuKF` | ✅ |
-| Att guidance | `inertial3D` · `velocityPoint` · `hillPoint` · `sunSafePoint` · `locationPointing` · `celestialTwoBodyPoint` · `waypointReference` | ✅ |
-| Att control | `mrpFeedback` · `mrpPD` · `rateServo` (`mrpSteering` + `rateServoFullNonlinear`) | ✅ |
-| Att effector iface | `rwMotorTorque`, `thrForceMapping`, `dipoleMapping` | ✅ |
-| Momentum mgmt | `thrMomentumManagement`, `thrMomentumDumping`, `mtbMomentumManagementSimple`, `rwNullSpace` | ✅ |
-| Formation | `formationBarycenter`, `hillStateConverter` | ✅ |
-| Comms | `simpleAntenna`, `linkBudget`, `groundLocation` | ✅ |
-| Monte Carlo | `MonteCarlo.Controller` | ❌ (planned) |
-| Visualization | `vizSupport` | 🔧 (attach path built; headless capture test pending) |
-| Data export | recorder field discovery → CSV/parquet/npz | ✅ |
-| Escape hatch | `[custom]` modules/tasks/connections/events | ✅ |
-
 ## Development
 
 ```bash
@@ -245,9 +215,8 @@ Workflow for a Basilisk version bump:
    field reference and `bskforge schema` are derived from the schema,
    they re-derive automatically after the fix.
 5. Re-run the definition-of-done gates, then record the validated Basilisk
-   version beside the feature it validates (coverage table above, release
-   notes): an upgrade adds a new dated validation line rather than
-   rewriting history.
+   version in the release notes: an upgrade adds a new dated validation
+   line rather than rewriting history.
 
 ## License
 
