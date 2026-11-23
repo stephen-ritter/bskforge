@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from bskforge.errors import ConfigError
+from bskforge.errors import AuditError, ConfigError
 from bskforge.loader import load_scenario, validate_scenario
 from bskforge.profiles import AUDITED, STANDARD, audit_document
 
@@ -150,6 +150,31 @@ class TestAuditedProfile:
         """
         nested = {"spacecraft": [{"name": "sc1", "custom": {"x": 1}}]}
         audit_document(nested, profile=AUDITED)
+
+
+class TestTheRefusalIsCatchableByName:
+    """A consumer adds its own sentence to this refusal, so it needs a type.
+
+    ``AuditError`` is a ``ConfigError`` (callers that just report load failures
+    keep working), but only the party that asked for the audited profile knows
+    what an escape hatch would hide from in *its* system - and it must be able
+    to say so without also catching unrelated schema typos in field names.
+    """
+
+    def test_it_is_its_own_type_and_still_a_config_error(self):
+        with pytest.raises(AuditError) as excinfo:
+            load_scenario(HATCH_EXAMPLE, profile=AUDITED)
+        assert isinstance(excinfo.value, ConfigError)
+
+    def test_a_schema_typo_is_not_an_audit_error(self, tmp_path):
+        doc = tmp_path / "bad.toml"
+        doc.write_text(
+            '[simulation]\nname = "x"\nduration = 1.0\nspacecraft_typo = 1\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ConfigError) as excinfo:
+            load_scenario(doc, profile=AUDITED)
+        assert not isinstance(excinfo.value, AuditError)
 
 
 class TestProfileName:

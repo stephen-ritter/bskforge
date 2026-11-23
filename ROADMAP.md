@@ -82,7 +82,7 @@ rather than a silent fall back to permissive loading. Why a profile instead of
 deleting the hatch: a consumer that *grades* a scenario can only grade what the
 schema names, but the hatch is how a mission uses a Basilisk capability before
 this library grows a block for it — so the request belongs at the call site, not
-in the schema. New `bskforge.profiles` (rules and the refusal text),
+in the schema. The refusal is its own `AuditError(ConfigError)`, because the consumer that asked for the profile is the only party that can say what a hatch would hide from in *its* system, and it must catch that without swallowing field-name typos. New `bskforge.profiles` (rules and the refusal text),
 `tests/test_profiles.py` (12 cases: the hatch still loads by default, both
 violations listed at once, empty `params` still refused — presence, not content —
 inheritance, the typo'd profile, and the escape section refused at the root only

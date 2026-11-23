@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bskforge.errors import ConfigError
+from bskforge.errors import AuditError
 
 #: The ordinary profile: the escape surface is available, as a builder should allow.
 STANDARD = "standard"
@@ -63,7 +63,7 @@ def audit_document(
         profile: the profile being enforced, named in the message.
 
     Raises:
-        ConfigError: every use of the escape surface, listed together. A gate
+        AuditError: every use of the escape surface, listed together. A gate
             that reports one violation per trip teaches slowly, and a document
             with two of them is one decision, not two.
     """
@@ -83,7 +83,7 @@ def audit_document(
         "the escape surface in a development scenario, add the type upstream "
         "with tests, then declare it here."
     )
-    raise ConfigError("\n".join(lines))
+    raise AuditError("\n".join(lines))
 
 
 def _escape_uses(data: Any, path: str = "") -> list[tuple[str, str]]:
