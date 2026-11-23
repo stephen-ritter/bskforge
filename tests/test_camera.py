@@ -18,7 +18,9 @@ is assumed on a test box. The capture itself runs when ``BSKFORGE_VIZARD``
 names a Vizard binary, and skips honestly otherwise.
 """
 
+import contextlib
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -35,9 +37,22 @@ VIZARD = os.environ.get("BSKFORGE_VIZARD")
 
 
 def camera_scenario(*, enabled=True, **camera_cfg):
+    sc1 = {
+        "name": "sc1",
+        # The craft must ORBIT the central body, not sit at its default
+        # (0,0,0). Vizard builds orbit lines and ground tracks for every
+        # spacecraft at scene init; at the planet's center that geometry
+        # is degenerate, scene construction throws, and the renderer
+        # never sends a frame (the camera module then blocks its task
+        # waiting for one). A real orbit is part of a renderable world.
+        "orbit": {
+            "type": "rv",
+            "rv": {"position": [7000e3, 0.0, 0.0], "velocity": [0.0, 7500.0, 0.0]},
+        },
+    }
     base = {
         "simulation": {"name": "cam", "duration": 8.0},
-        "spacecraft": [{"name": "sc1"}],
+        "spacecraft": [sc1],
         "visualization": {"enabled": enabled, "no_display": True},
         "camera": [dict({"parent": "sc1"}, **camera_cfg)],
     }
@@ -163,6 +178,7 @@ def test_headless_capture_lands_images(tmp_path):
         cwd=binary.parent,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        start_new_session=True,  # its own process group: the kill takes the tree
     )
     try:
         flight.join(300)
@@ -171,13 +187,18 @@ def test_headless_capture_lands_images(tmp_path):
         frames = sorted(tmp_path.glob("cameraImage*.png"))
         assert len(frames) >= 2, f"expected rendered frames, found {len(frames)}"
     finally:
-        # Unity ignores SIGTERM; escalate politely, then for real.
-        viz_proc.terminate()
-        try:
-            viz_proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            viz_proc.kill()
-            viz_proc.wait(timeout=30)
+        # xvfb-run exits on SIGTERM and reaps only itself; the Vizard it
+        # wraps ignores SIGTERM and survives inside the same group. A
+        # survivor keeps dialing 5556 and will steal the handshake of the
+        # NEXT sim run - zombie renderers poison future tests, so escalate
+        # the whole group to SIGKILL unconditionally, then reap.
+        pgid = os.getpgid(viz_proc.pid)
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(pgid, signal.SIGTERM)
+        time.sleep(2)
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(pgid, signal.SIGKILL)
+        viz_proc.wait(timeout=30)
 
 
 def test_build_cameras_without_interface_raises():
