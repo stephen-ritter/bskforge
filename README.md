@@ -157,7 +157,9 @@ reaction-wheel momentum management (`thrMomentumDumping`,
 multi-spacecraft scenarios, RF comm links (spacecraft/ground antennas
 with a full `linkBudget` chain) and formation flying (mass-weighted
 barycenter plus Hill-frame relative states), message recorders with
-CSV/parquet/npz export, Vizard visualization hooks, Monte Carlo
+CSV/parquet/npz export, Vizard visualization hooks including
+Vizard-rendered camera instruments (`[[camera]]`, images arrive on
+`opnavImageOutMsg`), Monte Carlo
 dispersion campaigns (`bskforge mc`), and the `[custom]` escape hatch.
 
 Every documented block fails loudly (never silently) when it references

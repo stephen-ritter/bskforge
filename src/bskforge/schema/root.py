@@ -21,7 +21,7 @@ from bskforge.schema.logging import LoggingSection
 from bskforge.schema.monte_carlo import MonteCarloSection
 from bskforge.schema.simulation import SimulationSection
 from bskforge.schema.spacecraft import SpacecraftSection
-from bskforge.schema.visualization import VisualizationSection
+from bskforge.schema.visualization import CameraSection, VisualizationSection
 from bskforge.schema.world import WorldSection
 
 
@@ -29,9 +29,10 @@ class ScenarioConfig(ScenarioModel):
     """Root of a ``bskforge`` scenario document.
 
     Top-level tables: ``[simulation]``, ``[world]``, ``[environment]``,
-    ``[[spacecraft]]`` (repeatable), ``[logging]``, ``[visualization]``.
-    A scenario may inherit defaults from another file via
-    ``extends = "base.toml"`` (resolved by :mod:`bskforge.loader`).
+    ``[[spacecraft]]`` (repeatable), ``[logging]``, ``[visualization]``,
+    ``[[camera]]`` (repeatable). A scenario may inherit defaults from
+    another file via ``extends = "base.toml"`` (resolved by
+    :mod:`bskforge.loader`).
     """
 
     simulation: SimulationSection = Field(default_factory=SimulationSection)
@@ -42,6 +43,7 @@ class ScenarioConfig(ScenarioModel):
     formations: list[FormationConfig] = Field(default_factory=list)
     logging: LoggingSection = Field(default_factory=LoggingSection)
     visualization: VisualizationSection = Field(default_factory=VisualizationSection)
+    camera: list[CameraSection] = Field(default_factory=list)
     custom: CustomSection = Field(default_factory=CustomSection)
     monte_carlo: MonteCarloSection | None = None
 
@@ -139,6 +141,21 @@ class ScenarioConfig(ScenarioModel):
                     raise ValueError(
                         f"monte_carlo dispersion on {disp.spacecraft!r}: "
                         "not a [[spacecraft]] name"
+                    )
+        if self.camera:
+            if not self.visualization.enabled:
+                raise ValueError(
+                    "[[camera]] frames are rendered by Vizard; add a "
+                    "[visualization] section with enabled = true"
+                )
+            cam_ids = [cam.camera_id for cam in self.camera]
+            if len(cam_ids) != len(set(cam_ids)):
+                raise ValueError("camera_id must be unique across [[camera]] entries")
+            for cam in self.camera:
+                if cam.parent not in names:
+                    raise ValueError(
+                        f"camera {cam.camera_id}: parent {cam.parent!r} "
+                        "is not a [[spacecraft]] name"
                     )
         return self
 

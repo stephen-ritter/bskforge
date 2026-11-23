@@ -14,6 +14,7 @@ from Basilisk.simulation import simSynch
 from Basilisk.utilities import vizSupport
 
 from bskforge.build.context import DYN_TASK, SimContext
+from bskforge.errors import BuildError
 
 
 def build_viz(ctx: SimContext) -> None:
@@ -21,12 +22,19 @@ def build_viz(ctx: SimContext) -> None:
 
     Vehicles, RW effectors and per-vehicle model-dictionary keys are passed
     as parallel lists. Live streaming additionally registers a clock-sync
-    module so Vizard pacing matches the simulated clock.
+    module so Vizard pacing matches the simulated clock. The interface
+    handle is retained on the context so the camera phase (which runs
+    after this one) can register instruments against it.
     """
     viz_cfg = ctx.config.visualization
     if not viz_cfg.enabled:
         return
     if not getattr(vizSupport, "vizFound", False):
+        if ctx.config.camera:
+            raise BuildError(
+                "[[camera]] frames are rendered by Vizard, but this "
+                "Basilisk build has no vizInterface support"
+            )
         import warnings
 
         warnings.warn(
@@ -50,7 +58,7 @@ def build_viz(ctx: SimContext) -> None:
         clock.accelFactor = 1.0  # real-time pacing
         ctx.add_dyn(clock)
 
-    vizSupport.enableUnityVisualization(
+    ctx.viz = vizSupport.enableUnityVisualization(
         ctx.sim,
         DYN_TASK,
         [bundle.sc for bundle in bundles],

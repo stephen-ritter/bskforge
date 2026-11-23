@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bskforge.build import custom, environment, recorders, viz
+from bskforge.build import camera, custom, environment, recorders, viz
 from bskforge.build.comm import build_comm_links
 from bskforge.build.context import SimContext
 from bskforge.build.disturbances import build_disturbances
@@ -38,7 +38,7 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
 
     Phases, in order: custom tasks → world → spacecraft → environment →
     disturbances → effectors → sensors → FSW → custom modules → custom
-    connections → recorders → custom events → visualization.
+    connections → recorders → custom events → visualization → cameras.
 
     Args:
         config: Validated scenario configuration.
@@ -89,6 +89,7 @@ def build_scenario(config: ScenarioConfig) -> BuiltScenario:
     custom.build_custom_events(ctx)
     custom.apply_simulation_options(ctx)
     viz.build_viz(ctx)
+    camera.build_cameras(ctx)
 
     return BuiltScenario(context=ctx)
 

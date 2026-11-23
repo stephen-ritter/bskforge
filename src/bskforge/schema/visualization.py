@@ -6,9 +6,13 @@
 #
 #  See LICENSE for full terms.
 
-"""Visualization models: ``[visualization]`` (Vizard)."""
+"""Visualization models: ``[visualization]`` (Vizard) and ``[[camera]]``."""
 
 from __future__ import annotations
+
+import math
+
+from pydantic import Field
 
 from bskforge.schema.base import ScenarioModel
 
@@ -29,6 +33,41 @@ class VisualizationSection(ScenarioModel):
     broadcast_stream: bool = False
     save_file: str | None = None
     no_display: bool = False
+
+
+class CameraSection(ScenarioModel):
+    """``[[camera]]``: an instrument whose image Vizard renders, not computes.
+
+    The Basilisk ``camera`` module receives frames back from Vizard over
+    the interface channel and lands them on its ``opnavImageOutMsg``.
+    The wiring order is Basilisk's contract, not a preference: parameters
+    must be set before the interface registers the camera, and
+    ``imageInMsg`` may subscribe only after registration - the image slot
+    does not exist until then. Slots are allocated in registration order.
+
+    Attributes:
+        parent: ModelTag of the spacecraft the camera is mounted on.
+        camera_id: Vizard's identifier for this instrument.
+        render_rate: Seconds between rendered frames.
+        sigma_CB: Camera frame C pointing relative to body B, as MRP.
+        camera_pos_B: Camera origin in the body frame [m].
+        resolution: Rendered image size (width, height) [px].
+        field_of_view: Full field of view [rad].
+        sky_box: Vizard skybox name.
+        save_images: Write every received frame to disk as PNG.
+        save_dir: Saved-image filename prefix (the directory must exist).
+    """
+
+    parent: str
+    camera_id: int = 1
+    render_rate: float = Field(2.0, gt=0, description="Seconds per rendered frame")
+    sigma_CB: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    camera_pos_B: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    resolution: tuple[int, int] = (512, 512)
+    field_of_view: float = Field(math.radians(50.0), gt=0, lt=math.pi)
+    sky_box: str = "black"
+    save_images: bool = False
+    save_dir: str | None = None
 
 
 class SpacecraftViz(ScenarioModel):

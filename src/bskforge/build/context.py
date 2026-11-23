@@ -111,6 +111,7 @@ class SimContext:
         self.env_msgs: dict[tuple[str, str], Any] = {}
         self.eclipse: Any = None
         self.scenario_recorders: list[RecorderSpec] = []
+        self.viz: Any = None
 
         self._create_processes()
         self._tasks[DYN_TASK] = DYN_TASK
