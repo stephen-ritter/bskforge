@@ -26,9 +26,12 @@ version = "0.3.0"
 description = "Forge and run Basilisk spacecraft simulations from declarative scenario files"
 readme = "README.md"
 requires-python = ">=3.11,<3.16"
+authors = [{ name = "Autonomous Vehicle Systems Lab, University of Colorado Boulder" }]
+license = { text = "ISC" }
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: ISC License (ISCL)",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]

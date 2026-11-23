@@ -168,8 +168,35 @@ before their writer modules first execute (Basilisk logs them as
 "not properly initialized" warnings once per stream); all later samples are
 full-rate data.
 
-See [`ROADMAP.md`](ROADMAP.md) for the Basilisk coverage matrix and what is
-implemented at each phase.
+## Basilisk coverage
+
+What the format covers end to end, by Basilisk module family — legend:
+❌ not covered · 🟡 schema only · 🔧 partial · ✅ end-to-end.
+
+| Family | Module examples | Status |
+| --- | --- | --- |
+| Dynamics hub | `spacecraft` | ✅ |
+| Gravity/world | `simIncludeGravBody`, SPICE, sph-harm, third-body | ✅ (polyhedral via `[custom]`) |
+| Reaction wheels | `reactionWheelStateEffector`, `simIncludeRW` | ✅ |
+| Thrusters | `thrusterStateEffector`, `thrusterDynamicEffector` | ✅ (state-model thrusters via `[custom]`) |
+| MTB | `MtbEffector` | ✅ |
+| SRP | `radiationPressure`, `facetSRPDynamicEffector` | ✅ |
+| Drag | `dragDynamicEffector`, `facetDragDynamicEffector` | ✅ |
+| Magnetic field | `magneticFieldWMM`, `magneticFieldCenteredDipole` | ✅ |
+| Atmosphere | `ExponentialAtmosphere`, `MsisAtmosphere` | ✅ (2.12 has no wind model) |
+| Eclipse | `eclipse` | ✅ |
+| Sensors (att) | `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer`, `pinholeCamera` | ✅ |
+| Estimation | `simpleNav`, `InertialUKF`, `cssWlsEst`, `sunlineSuKF` | ✅ |
+| Att guidance | `inertial3D` · `velocityPoint` · `hillPoint` · `sunSafePoint` · `locationPointing` · `celestialTwoBodyPoint` · `waypointReference` | ✅ |
+| Att control | `mrpFeedback` · `mrpPD` · `rateServo` (`mrpSteering` + `rateServoFullNonlinear`) | ✅ |
+| Att effector iface | `rwMotorTorque`, `thrForceMapping`, `dipoleMapping` | ✅ |
+| Momentum mgmt | `thrMomentumManagement`, `thrMomentumDumping`, `mtbMomentumManagementSimple`, `rwNullSpace` | ✅ |
+| Formation | `formationBarycenter`, `hillStateConverter` | ✅ |
+| Comms | `simpleAntenna`, `linkBudget`, `groundLocation` | ✅ |
+| Monte Carlo | `MonteCarlo.Controller` | ❌ (planned) |
+| Visualization | `vizSupport` | 🔧 (attach path built; headless capture test pending) |
+| Data export | recorder field discovery → CSV/parquet/npz | ✅ |
+| Escape hatch | `[custom]` modules/tasks/connections/events | ✅ |
 
 ## Development
 
@@ -181,8 +208,8 @@ python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/ty check
 ```
 
-Definition of done for anything tracked in `ROADMAP.md`: tests pass,
-`ruff check`/`ruff format` clean, `ty check` clean.
+Definition of done for any change: tests pass, `ruff check`/`ruff format`
+clean, `ty check` clean.
 
 ## Upgrading Basilisk
 
@@ -217,11 +244,12 @@ Workflow for a Basilisk version bump:
 4. Regenerate the docs — `bskforge reference > REFERENCE.md` — since the
    field reference and `bskforge schema` are derived from the schema,
    they re-derive automatically after the fix.
-5. Re-run the definition-of-done gates and record the result in
-   `ROADMAP.md`: completed entries are annotated *validated against
-   Basilisk X.Y*, so an upgrade adds a new dated validation line rather
-   than rewriting history.
+5. Re-run the definition-of-done gates, then record the validated Basilisk
+   version beside the feature it validates (coverage table above, release
+   notes): an upgrade adds a new dated validation line rather than
+   rewriting history.
 
 ## License
 
-ISC — Autonomous Vehicle Systems Lab, University of Colorado Boulder.
+ISC — Autonomous Vehicle Systems Lab, University of Colorado Boulder. See
+[`LICENSE`](LICENSE).

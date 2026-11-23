@@ -27,3 +27,6 @@ scratch/
 .idea/
 .vscode/
 .DS_Store
+
+# working journal - kept out of the published tree
+ROADMAP.md
