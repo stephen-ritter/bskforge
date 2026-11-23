@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from Basilisk.simulation import simSynch
 from Basilisk.utilities import vizSupport
 
@@ -57,6 +60,18 @@ def build_viz(ctx: SimContext) -> None:
         clock = simSynch.ClockSynch()
         clock.accelFactor = 1.0  # real-time pacing
         ctx.add_dyn(clock)
+
+    # Vizard's patience (the ~35 s message-load timeout) must start
+    # counting when this world starts waiting for it, not when the
+    # renderer's container booted. A launcher that runs the renderer
+    # beside the world gates it on this sentinel: unlink-then-write so
+    # the mtime always says "the flight now running entered its wait".
+    wait_file = os.environ.get("BSKFORGE_VIZ_WAIT_FILE", "")
+    if wait_file:
+        marker = Path(wait_file)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.unlink(missing_ok=True)
+        marker.write_bytes(b"")
 
     ctx.viz = vizSupport.enableUnityVisualization(
         ctx.sim,
