@@ -84,6 +84,40 @@ Every Basilisk object created by the domain builders also accepts a free-form
 module at build time (with did-you-mean errors), so new upstream parameters
 need no bskforge changes.
 
+## Loading a scenario you intend to audit
+
+The hatch is a builder's feature. A *consumer* that grades a scenario — a
+flight-software build, a ground-identity generator, an acceptance harness — can
+only grade what the schema names: hardware wired in through `[custom]` or a
+`params` table has no declared type, so nothing downstream can say what it is or
+check what it produces. Its readings exist and nothing judges them, which fails
+quietly rather than loudly.
+
+Consumers can ask for that explicitly, without the library taking capability
+away from anybody else:
+
+```python
+from bskforge.loader import load_scenario
+
+config = load_scenario("mission.toml", profile="audited")
+```
+
+- `profile="standard"` (the default) is exactly the behaviour above: the escape
+  surface is available, and `examples/custom_escape_hatch.toml` still loads.
+- `profile="audited"` refuses a document that leaves the declared schema —
+  `[custom]` at the root, or a `params` table anywhere — listing **every** use in
+  one message with its document path (`spacecraft[0].sensors[0].params`), and
+  naming the route rather than only the prohibition: prototype the device with
+  the hatch, upstream the type with tests, then declare it here.
+- Inheritance is not a loophole: the audit runs on the merged document, after
+  `extends` is resolved.
+- A misspelled profile is an error. A typo that quietly loaded permissively
+  would be the one way this feature could mislead the very check it exists for.
+
+Building is unchanged in both profiles. The profile constrains what may be
+*loaded*, which is the only place this distinction can be enforced while the
+hatch stays available where it is genuinely useful.
+
 ## Examples
 
 Every example is executed by the test suite:

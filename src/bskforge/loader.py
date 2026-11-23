@@ -20,34 +20,45 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from bskforge.errors import ConfigError
+from bskforge.profiles import PROFILES, STANDARD, audit_document
 from bskforge.schema.root import ScenarioConfig
 
 
-def load_scenario(path: str | Path) -> ScenarioConfig:
+def load_scenario(path: str | Path, *, profile: str = STANDARD) -> ScenarioConfig:
     """Load, resolve and validate a scenario file.
 
     Args:
         path: Filesystem path to a scenario TOML file.
+        profile: How much the document may express for itself. ``'standard'``
+            (the default) allows the schema's escape surface; ``'audited'``
+            refuses a document that wires hardware in by hand, because a
+            consumer of the result can only grade what the schema names - see
+            :mod:`bskforge.profiles`.
 
     Returns:
         A validated :class:`ScenarioConfig`.
 
     Raises:
-        ConfigError: The file is missing, unparsable, or fails validation.
+        ConfigError: The file is missing, unparsable, fails validation, or uses
+            the escape surface under a profile that forbids it.
     """
+    _require_profile(profile)
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"scenario file not found: {path}")
     data = _load_with_extends(path, seen=[])
-    return validate_scenario(data, source=str(path))
+    return validate_scenario(data, source=str(path), profile=profile)
 
 
-def validate_scenario(data: dict[str, Any], source: str = "<dict>") -> ScenarioConfig:
+def validate_scenario(
+    data: dict[str, Any], source: str = "<dict>", *, profile: str = STANDARD
+) -> ScenarioConfig:
     """Validate an in-memory scenario document.
 
     Args:
         data: Raw scenario mapping (as parsed from TOML).
         source: Label used in error messages.
+        profile: See :func:`load_scenario`.
 
     Returns:
         A validated :class:`ScenarioConfig`.
@@ -55,8 +66,13 @@ def validate_scenario(data: dict[str, Any], source: str = "<dict>") -> ScenarioC
     Raises:
         ConfigError: Validation failed; the message carries suggestions.
     """
+    _require_profile(profile)
     data = dict(data)
     data.pop("extends", None)
+    if profile != STANDARD:
+        # Before the schema: the audit is about what the document *did*, and a
+        # pydantic error would bury it under field-by-field complaints.
+        audit_document(data, source=source, profile=profile)
     try:
         config = ScenarioConfig(**data)
     except ValidationError as exc:
@@ -64,6 +80,20 @@ def validate_scenario(data: dict[str, Any], source: str = "<dict>") -> ScenarioC
     if source != "<dict>":
         config.set_source_path(source)
     return config
+
+
+def _require_profile(profile: str) -> None:
+    """Refuse a misspelled profile rather than quietly loading as 'standard'.
+
+    A consumer that asks for the audited profile and typos it would otherwise
+    get the permissive loader and a green run - the one failure mode a profile
+    system has to make impossible.
+    """
+    if profile not in PROFILES:
+        raise ConfigError(
+            f"unknown scenario profile {profile!r} (known profiles: "
+            f"{', '.join(PROFILES)})"
+        )
 
 
 def _load_with_extends(path: Path, seen: list[Path]) -> dict[str, Any]:

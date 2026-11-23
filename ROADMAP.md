@@ -69,6 +69,25 @@ _(MuJoCo scenes stays a stretch goal; parked with Phase 7)_
 
 ## Completed
 
+### 2026-11-23 — Loader: load profiles (`profile="audited"`)
+`load_scenario(path, profile=…)` and `validate_scenario(…, profile=…)`, both
+keyword-only. `standard` (default) is unchanged behaviour — the `[custom]` hatch
+and `params` tables keep working, and the shipped
+`examples/custom_escape_hatch.toml` is loaded under the default profile by a test
+precisely because that must not regress. `audited` refuses a document that leaves
+the declared schema: `[custom]` at the root or `params` anywhere, listed together
+with document paths (`spacecraft[0].sensors[0].params`), run on the merged
+document so `extends` cannot launder one, and a misspelled profile is an error
+rather than a silent fall back to permissive loading. Why a profile instead of
+deleting the hatch: a consumer that *grades* a scenario can only grade what the
+schema names, but the hatch is how a mission uses a Basilisk capability before
+this library grows a block for it — so the request belongs at the call site, not
+in the schema. New `bskforge.profiles` (rules and the refusal text),
+`tests/test_profiles.py` (12 cases: the hatch still loads by default, both
+violations listed at once, empty `params` still refused — presence, not content —
+inheritance, the typo'd profile, and the escape section refused at the root only
+so a same-named nested key is not over-refused). Suite 107 → 119. Release 0.3.0.
+
 ### 2026-11-22 — Sensors: `gpsReceiver` (plant GNSS via native SimpleNav)
 First-class `[[spacecraft.sensors]] type = "gpsReceiver"`:
 `GpsReceiverConfig` (named `pos_sigma_m` / `vel_sigma_m_s` / `rng_seed`,
