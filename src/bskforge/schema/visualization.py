@@ -56,6 +56,12 @@ class CameraSection(ScenarioModel):
         sky_box: Vizard skybox name.
         save_images: Write every received frame to disk as PNG.
         save_dir: Saved-image filename prefix (the directory must exist).
+        record_rate: The store outlet - save one of every N captured
+            frames. 0 (the default) stores nothing: a pure navigation
+            camera ships zero image bytes and the absence is visible.
+        downlink: Recorded frames are eligible for file transfer. An
+            outlet with nothing to downlink is a typo, not a config, so
+            this requires a nonzero ``record_rate``.
     """
 
     parent: str
@@ -68,6 +74,10 @@ class CameraSection(ScenarioModel):
     sky_box: str = "black"
     save_images: bool = False
     save_dir: str | None = None
+    record_rate: int = Field(
+        0, ge=0, description="Store every Nth captured frame; 0 stores nothing"
+    )
+    downlink: bool = False
 
 
 class SpacecraftViz(ScenarioModel):

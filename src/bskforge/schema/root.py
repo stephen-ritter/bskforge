@@ -157,6 +157,12 @@ class ScenarioConfig(ScenarioModel):
                         f"camera {cam.camera_id}: parent {cam.parent!r} "
                         "is not a [[spacecraft]] name"
                     )
+                if cam.downlink and cam.record_rate == 0:
+                    raise ValueError(
+                        f"camera {cam.camera_id}: downlink = true with "
+                        "record_rate = 0 stores nothing, so nothing is "
+                        "eligible to downlink"
+                    )
         return self
 
     def primary_vehicle(self) -> SpacecraftSection:

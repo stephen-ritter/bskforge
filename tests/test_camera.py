@@ -79,6 +79,26 @@ class TestValidation:
                 }
             )
 
+    def test_outlets_default_honest(self):
+        """A camera that says nothing about outlets ships zero image bytes."""
+        cam = camera_scenario().camera[0]
+        assert cam.record_rate == 0
+        assert cam.downlink is False
+
+    def test_store_and_downlink_accepted_together(self):
+        cam = camera_scenario(record_rate=3, downlink=True).camera[0]
+        assert cam.record_rate == 3
+        assert cam.downlink is True
+
+    def test_negative_record_rate_refused(self):
+        with pytest.raises(ConfigError, match="record_rate"):
+            camera_scenario(record_rate=-1)
+
+    def test_downlink_without_store_refused(self):
+        """An outlet with nothing to downlink is a typo, not a config."""
+        with pytest.raises(ConfigError, match="record_rate"):
+            camera_scenario(downlink=True)
+
 
 class TestBuild:
     def test_camera_builds_onto_interface(self):
