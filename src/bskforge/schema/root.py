@@ -163,6 +163,14 @@ class ScenarioConfig(ScenarioModel):
                         "record_rate = 0 stores nothing, so nothing is "
                         "eligible to downlink"
                     )
+                if cam.record_rate and (
+                    cam.store_bytes is None or cam.store_files is None
+                ):
+                    raise ValueError(
+                        f"camera {cam.camera_id}: record_rate = {cam.record_rate} "
+                        "opens a store with no declared capacity - set store_bytes "
+                        "(the volume) and store_files (the catalog's reach)"
+                    )
         return self
 
     def primary_vehicle(self) -> SpacecraftSection:

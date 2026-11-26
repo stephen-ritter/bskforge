@@ -84,11 +84,36 @@ class TestValidation:
         cam = camera_scenario().camera[0]
         assert cam.record_rate == 0
         assert cam.downlink is False
+        assert cam.store_bytes is None
+        assert cam.store_files is None
 
     def test_store_and_downlink_accepted_together(self):
-        cam = camera_scenario(record_rate=3, downlink=True).camera[0]
+        cam = camera_scenario(
+            record_rate=3, downlink=True, store_bytes=1 << 20, store_files=64
+        ).camera[0]
         assert cam.record_rate == 3
         assert cam.downlink is True
+        assert cam.store_bytes == 1 << 20
+        assert cam.store_files == 64
+
+    def test_open_store_without_capacity_refused(self):
+        """A store that cannot say its size cannot say when it is full."""
+        with pytest.raises(ConfigError, match="no declared capacity"):
+            camera_scenario(record_rate=1)
+
+    def test_open_store_without_file_cap_refused(self):
+        """Bytes bound the volume; the count needs bounding too.
+
+        64 MiB of empty-sky frames is ~40,000 files and 64 MiB of a bright
+        target is a few hundred - a law written only in bytes cannot say
+        how long its catalog runs.
+        """
+        with pytest.raises(ConfigError, match="store_files"):
+            camera_scenario(record_rate=1, store_bytes=1 << 20)
+
+    def test_zero_capacity_refused(self):
+        with pytest.raises(ConfigError, match="store_bytes"):
+            camera_scenario(record_rate=1, store_bytes=0, store_files=64)
 
     def test_negative_record_rate_refused(self):
         with pytest.raises(ConfigError, match="record_rate"):
