@@ -177,17 +177,25 @@ class ScenarioConfig(ScenarioModel):
                         f"camera {cam.camera_id}: parent {cam.parent!r} "
                         "is not a [[spacecraft]] name"
                     )
-                if cam.downlink and cam.record_rate == 0:
+                if cam.record_mode == "snap" and cam.record_rate:
                     raise ValueError(
-                        f"camera {cam.camera_id}: downlink = true with "
-                        "record_rate = 0 stores nothing, so nothing is "
+                        f"camera {cam.camera_id}: record_mode = 'snap' files only "
+                        "pulse deliveries, but record_rate = "
+                        f"{cam.record_rate} opens a cadence door beside it - "
+                        "one outlet, one door"
+                    )
+                outlet_open = cam.record_rate > 0 or cam.record_mode == "snap"
+                if cam.downlink and not outlet_open:
+                    raise ValueError(
+                        f"camera {cam.camera_id}: downlink = true with a closed outlet "
+                        "(record_rate = 0, cadence mode) stores nothing, so nothing is "
                         "eligible to downlink"
                     )
-                if cam.record_rate and cam.parent not in store_parents:
+                if outlet_open and cam.parent not in store_parents:
                     raise ValueError(
-                        f"camera {cam.camera_id}: record_rate = {cam.record_rate} "
-                        f"writes bytes with no recorder sized for it - add a "
-                        f"[[store]] row with parent = {cam.parent!r}"
+                        f"camera {cam.camera_id}: an open outlet writes bytes with no "
+                        f"recorder sized for it - add a [[store]] row with "
+                        f"parent = {cam.parent!r}"
                     )
         return self
 

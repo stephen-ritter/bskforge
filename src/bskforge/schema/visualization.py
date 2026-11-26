@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 from pydantic import Field
 
@@ -56,12 +57,20 @@ class CameraSection(ScenarioModel):
         sky_box: Vizard skybox name.
         save_images: Write every received frame to disk as PNG.
         save_dir: Saved-image filename prefix (the directory must exist).
-        record_rate: The store outlet - save one of every N captured
-            frames. 0 (the default) stores nothing: a pure navigation
-            camera ships zero image bytes and the absence is visible.
+        record_rate: The store outlet's cadence door - save one of every
+            N captured frames. 0 (the default) closes it: a pure
+            navigation camera ships zero image bytes and the absence is
+            visible.
+        record_mode: Which door fills the store outlet. "cadence" (the
+            default) files every ``record_rate``-th capture. "snap"
+            files ONLY shutter-pulse deliveries - the eye renders and
+            feeds the estimator continuously while the store hears
+            nothing until the ground commands a snapshot. "snap" with a
+            nonzero ``record_rate`` is refused: one outlet, one door.
         downlink: Recorded frames are eligible for file transfer. An
             outlet with nothing to downlink is a typo, not a config, so
-            this requires a nonzero ``record_rate``.
+            this requires an open door: a nonzero ``record_rate`` or
+            ``record_mode = "snap"``.
 
         The bytes an open outlet writes land in the vehicle's recorder,
         which is a :class:`~bskforge.schema.store.StoreSection` - declared
@@ -81,6 +90,11 @@ class CameraSection(ScenarioModel):
     save_dir: str | None = None
     record_rate: int = Field(
         0, ge=0, description="Store every Nth captured frame; 0 stores nothing"
+    )
+    record_mode: Literal["cadence", "snap"] = Field(
+        "cadence",
+        description="Outlet door: every Nth capture ('cadence') "
+        "or pulse deliveries only ('snap')",
     )
     downlink: bool = False
 

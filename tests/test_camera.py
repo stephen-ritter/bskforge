@@ -100,6 +100,28 @@ class TestValidation:
         assert doc.store[0].capacity_files == 64
         assert doc.store[0].payload == "cam"
 
+    def test_outlet_mode_defaults_to_honest_cadence(self):
+        """Silence about the mode means the old door: every Nth capture."""
+        doc = camera_scenario()
+        assert doc.camera[0].record_mode == "cadence"
+
+    def test_snap_mode_needs_a_recorder_like_any_outlet(self):
+        """Pulse-only is an open outlet: bytes still land, so size the store."""
+        doc = camera_scenario(record_mode="snap", store=[RECORDER])
+        assert doc.camera[0].record_mode == "snap"
+        with pytest.raises(ConfigError, match=r"\[\[store\]\]"):
+            camera_scenario(record_mode="snap")
+
+    def test_snap_mode_with_cadence_refused(self):
+        """One outlet, one door: 'snap' plus a cadence is two truths."""
+        with pytest.raises(ConfigError, match="one outlet, one door"):
+            camera_scenario(record_mode="snap", record_rate=2, store=[RECORDER])
+
+    def test_downlink_accepts_a_pulse_only_outlet(self):
+        """Commanded frames are still recorded frames."""
+        doc = camera_scenario(record_mode="snap", downlink=True, store=[RECORDER])
+        assert doc.camera[0].downlink is True
+
     def test_open_outlet_without_recorder_refused(self):
         """Bytes that run out need a size asked for before flight."""
         with pytest.raises(ConfigError, match=r"\[\[store\]\]"):
