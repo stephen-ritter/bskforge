@@ -62,15 +62,11 @@ class CameraSection(ScenarioModel):
         downlink: Recorded frames are eligible for file transfer. An
             outlet with nothing to downlink is a typo, not a config, so
             this requires a nonzero ``record_rate``.
-        store_bytes: Recorder capacity for this payload's frames [bytes].
-            Required whenever the outlet is open (``record_rate`` > 0): a
-            store that cannot say how big it is cannot say when it is full,
-            and "full" is the moment flight software must have a law.
-        store_files: Most files the catalog holds before the oldest makes
-            room. Bytes bound the volume; files bound the count, because
-            frame size follows the scene rather than the intent - 64 MiB of
-            empty sky is 40,000 frames, the same volume of a bright target
-            is 290.
+
+        The bytes an open outlet writes land in the vehicle's recorder,
+        which is a :class:`~bskforge.schema.store.StoreSection` - declared
+        once per vehicle payload, not once per eye, because two eyes on the
+        same vehicle write into the same store.
     """
 
     parent: str
@@ -87,16 +83,6 @@ class CameraSection(ScenarioModel):
         0, ge=0, description="Store every Nth captured frame; 0 stores nothing"
     )
     downlink: bool = False
-    store_bytes: int | None = Field(
-        None,
-        gt=0,
-        description="Recorder capacity for this payload's frames [bytes]",
-    )
-    store_files: int | None = Field(
-        None,
-        gt=0,
-        description="Most files the catalog holds before the oldest makes room",
-    )
 
 
 class SpacecraftViz(ScenarioModel):

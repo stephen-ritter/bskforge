@@ -8,7 +8,7 @@
 
 """bskforge: forge and run Basilisk simulations from scenario files."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 from bskforge.errors import BuildError, ConfigError, UnsupportedError
 from bskforge.loader import load_scenario, validate_scenario

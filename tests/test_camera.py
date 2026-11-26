@@ -36,7 +36,7 @@ from bskforge.runner import ScenarioRunner
 VIZARD = os.environ.get("BSKFORGE_VIZARD")
 
 
-def camera_scenario(*, enabled=True, **camera_cfg):
+def camera_scenario(*, enabled=True, store=None, **camera_cfg):
     sc1 = {
         "name": "sc1",
         # The craft must ORBIT the central body, not sit at its default
@@ -56,7 +56,13 @@ def camera_scenario(*, enabled=True, **camera_cfg):
         "visualization": {"enabled": enabled, "no_display": True},
         "camera": [dict({"parent": "sc1"}, **camera_cfg)],
     }
+    if store is not None:
+        base["store"] = list(store)
     return validate_scenario(base)
+
+
+#: One vehicle's recorder, sized. Every open outlet needs one.
+RECORDER = {"parent": "sc1", "capacity_bytes": 1 << 20, "capacity_files": 64}
 
 
 class TestValidation:
@@ -81,39 +87,62 @@ class TestValidation:
 
     def test_outlets_default_honest(self):
         """A camera that says nothing about outlets ships zero image bytes."""
-        cam = camera_scenario().camera[0]
-        assert cam.record_rate == 0
-        assert cam.downlink is False
-        assert cam.store_bytes is None
-        assert cam.store_files is None
+        doc = camera_scenario()
+        assert doc.camera[0].record_rate == 0
+        assert doc.camera[0].downlink is False
+        assert doc.store == []
 
     def test_store_and_downlink_accepted_together(self):
-        cam = camera_scenario(
-            record_rate=3, downlink=True, store_bytes=1 << 20, store_files=64
-        ).camera[0]
-        assert cam.record_rate == 3
-        assert cam.downlink is True
-        assert cam.store_bytes == 1 << 20
-        assert cam.store_files == 64
+        doc = camera_scenario(record_rate=3, downlink=True, store=[RECORDER])
+        assert doc.camera[0].record_rate == 3
+        assert doc.camera[0].downlink is True
+        assert doc.store[0].capacity_bytes == 1 << 20
+        assert doc.store[0].capacity_files == 64
+        assert doc.store[0].payload == "cam"
 
-    def test_open_store_without_capacity_refused(self):
-        """A store that cannot say its size cannot say when it is full."""
-        with pytest.raises(ConfigError, match="no declared capacity"):
+    def test_open_outlet_without_recorder_refused(self):
+        """Bytes that run out need a size asked for before flight."""
+        with pytest.raises(ConfigError, match=r"\[\[store\]\]"):
             camera_scenario(record_rate=1)
 
-    def test_open_store_without_file_cap_refused(self):
-        """Bytes bound the volume; the count needs bounding too.
-
-        64 MiB of empty-sky frames is ~40,000 files and 64 MiB of a bright
-        target is a few hundred - a law written only in bytes cannot say
-        how long its catalog runs.
-        """
-        with pytest.raises(ConfigError, match="store_files"):
-            camera_scenario(record_rate=1, store_bytes=1 << 20)
-
     def test_zero_capacity_refused(self):
-        with pytest.raises(ConfigError, match="store_bytes"):
-            camera_scenario(record_rate=1, store_bytes=0, store_files=64)
+        with pytest.raises(ConfigError, match="capacity_bytes"):
+            camera_scenario(record_rate=1, store=[{**RECORDER, "capacity_bytes": 0}])
+
+    def test_zero_file_cap_refused(self):
+        with pytest.raises(ConfigError, match="capacity_files"):
+            camera_scenario(record_rate=1, store=[{**RECORDER, "capacity_files": 0}])
+
+    def test_store_on_a_vehicle_that_does_not_fly_refused(self):
+        with pytest.raises(ConfigError, match="is not a \\[\\[spacecraft\\]\\] name"):
+            camera_scenario(store=[{**RECORDER, "parent": "ghost"}])
+
+    def test_duplicate_store_rows_refused(self):
+        """One recorder per vehicle and payload: two rows is two truths."""
+        with pytest.raises(ConfigError, match="duplicate"):
+            camera_scenario(record_rate=1, store=[RECORDER, RECORDER])
+
+    def test_two_eyes_share_one_recorder(self):
+        """A second eye is a second instrument on the same recorder.
+
+        The capacity is a property of the vehicle's store, not of the eye
+        that happened to declare it first: sizing it per instrument would
+        give one directory two budgets and no way to say which one binds.
+        """
+        doc = validate_scenario(
+            {
+                "simulation": {"name": "two eyes", "duration": 8.0},
+                "spacecraft": [{"name": "sc1"}],
+                "visualization": {"enabled": True, "no_display": True},
+                "camera": [
+                    {"parent": "sc1", "camera_id": 1, "record_rate": 2},
+                    {"parent": "sc1", "camera_id": 2, "record_rate": 3},
+                ],
+                "store": [RECORDER],
+            }
+        )
+        assert len(doc.camera) == 2
+        assert len(doc.store) == 1
 
     def test_negative_record_rate_refused(self):
         with pytest.raises(ConfigError, match="record_rate"):

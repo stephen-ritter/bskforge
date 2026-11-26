@@ -21,6 +21,7 @@ from bskforge.schema.logging import LoggingSection
 from bskforge.schema.monte_carlo import MonteCarloSection
 from bskforge.schema.simulation import SimulationSection
 from bskforge.schema.spacecraft import SpacecraftSection
+from bskforge.schema.store import StoreSection
 from bskforge.schema.visualization import CameraSection, VisualizationSection
 from bskforge.schema.world import WorldSection
 
@@ -30,9 +31,9 @@ class ScenarioConfig(ScenarioModel):
 
     Top-level tables: ``[simulation]``, ``[world]``, ``[environment]``,
     ``[[spacecraft]]`` (repeatable), ``[logging]``, ``[visualization]``,
-    ``[[camera]]`` (repeatable). A scenario may inherit defaults from
-    another file via ``extends = "base.toml"`` (resolved by
-    :mod:`bskforge.loader`).
+    ``[[camera]]`` (repeatable), ``[[store]]`` (repeatable). A scenario may
+    inherit defaults from another file via ``extends = "base.toml"``
+    (resolved by :mod:`bskforge.loader`).
     """
 
     simulation: SimulationSection = Field(default_factory=SimulationSection)
@@ -44,6 +45,7 @@ class ScenarioConfig(ScenarioModel):
     logging: LoggingSection = Field(default_factory=LoggingSection)
     visualization: VisualizationSection = Field(default_factory=VisualizationSection)
     camera: list[CameraSection] = Field(default_factory=list)
+    store: list[StoreSection] = Field(default_factory=list)
     custom: CustomSection = Field(default_factory=CustomSection)
     monte_carlo: MonteCarloSection | None = None
 
@@ -142,6 +144,24 @@ class ScenarioConfig(ScenarioModel):
                         f"monte_carlo dispersion on {disp.spacecraft!r}: "
                         "not a [[spacecraft]] name"
                     )
+        store_keys = [(store.parent, store.payload) for store in self.store]
+        if len(store_keys) != len(set(store_keys)):
+            dupes = sorted(
+                f"{parent}/{payload}"
+                for parent, payload in set(store_keys)
+                if store_keys.count((parent, payload)) > 1
+            )
+            raise ValueError(
+                "duplicate [[store]] rows (one per vehicle and payload): "
+                + ", ".join(dupes)
+            )
+        for store in self.store:
+            if store.parent not in names:
+                raise ValueError(
+                    f"store {store.payload!r}: parent {store.parent!r} "
+                    "is not a [[spacecraft]] name"
+                )
+        store_parents = {store.parent for store in self.store}
         if self.camera:
             if not self.visualization.enabled:
                 raise ValueError(
@@ -163,13 +183,11 @@ class ScenarioConfig(ScenarioModel):
                         "record_rate = 0 stores nothing, so nothing is "
                         "eligible to downlink"
                     )
-                if cam.record_rate and (
-                    cam.store_bytes is None or cam.store_files is None
-                ):
+                if cam.record_rate and cam.parent not in store_parents:
                     raise ValueError(
                         f"camera {cam.camera_id}: record_rate = {cam.record_rate} "
-                        "opens a store with no declared capacity - set store_bytes "
-                        "(the volume) and store_files (the catalog's reach)"
+                        f"writes bytes with no recorder sized for it - add a "
+                        f"[[store]] row with parent = {cam.parent!r}"
                     )
         return self
 
