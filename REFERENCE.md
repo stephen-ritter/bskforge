@@ -2,7 +2,7 @@
 
 Generated from the pydantic schema (v2) — every field, type and default that `bskforge validate` accepts. Regenerate with `bskforge reference > REFERENCE.md`.
 
-Top-level tables: `[simulation]`, `[world]`, `[environment]`, `[spacecraft]`, `[comm_links]`, `[formations]`, `[logging]`, `[visualization]`, `[custom]`, `[monte_carlo]` (`[[spacecraft]]`, `[[comm_links]]` and `[[formations]]` are repeatable).
+Top-level tables: `[simulation]`, `[world]`, `[environment]`, `[spacecraft]`, `[comm_links]`, `[formations]`, `[logging]`, `[visualization]`, `[camera]`, `[store]`, `[custom]`, `[monte_carlo]` (`[[spacecraft]]`, `[[comm_links]]` and `[[formations]]` are repeatable).
 
 | table | type | description |
 | --- | --- | --- |
@@ -14,6 +14,8 @@ Top-level tables: `[simulation]`, `[world]`, `[environment]`, `[spacecraft]`, `[
 | `[formations]` | array[table] |  |
 | `[logging]` | `LoggingSection` |  |
 | `[visualization]` | `VisualizationSection` |  |
+| `[camera]` | array[table] |  |
+| `[store]` | array[table] |  |
 | `[custom]` | `CustomSection` |  |
 | `[monte_carlo]` | `MonteCarloSection` / `null` |  |
 
@@ -121,7 +123,7 @@ Planet shadow model: [environment.eclipse].
 | `hub` | `HubConfig` |  |  |  |
 | `orbit` | `type` ∈ {`elements`, `rv`} | `None` |  |  |
 | `attitude` | `AttitudeConfig` / `null` | `None` |  |  |
-| `sensors` | array[`type` ∈ {`camera`, `coarseSunSensor`, `imuSensor`, `magnetometer`, `starTracker`}] |  |  |  |
+| `sensors` | array[`type` ∈ {`camera`, `coarseSunSensor`, `gpsReceiver`, `imuSensor`, `magnetometer`, `starTracker`}] |  |  |  |
 | `css_constellations` | array[table] |  |  |  |
 | `effectors` | array[`type` ∈ {`mtb`, `reactionWheels`, `thrusters`}] |  |  |  |
 | `disturbances` | array[`type` ∈ {`drag`, `gravityGradient`, `solarRadiationPressure`}] |  |  |  |
@@ -211,6 +213,19 @@ Magnetometer: type = "magnetometer".
 | `saturate` | bool | `False` |  |  |
 | `recorder` | `RecorderConfig` |  |  |  |
 
+### `[[spacecraft.sensors]]` — `gpsReceiver`
+GNSS receiver: type = "gpsReceiver".
+
+| field | type | default | required | description |
+| --- | --- | --- | --- | --- |
+| `params` | table | `{}` |  |  |
+| `type` | str | `'gpsReceiver'` |  |  |
+| `name` | str | `'gnss'` |  |  |
+| `pos_sigma_m` | float | `15.0` |  | Position error sigma [m] |
+| `vel_sigma_m_s` | float | `0.01` |  | Velocity error sigma [m/s] |
+| `rng_seed` | int | `4673619` |  | Error-process RNG seed |
+| `recorder` | `RecorderConfig` |  |  |  |
+
 ### `[[spacecraft.sensors]]` — `camera`
 Pinhole landmark camera: type = "camera".
 
@@ -236,7 +251,7 @@ A fixed landmark on the camera's target body.
 | `position` | array[float] |  | ✅ |  |
 | `normal` | array[float] | `[1.0, 0.0, 0.0]` |  |  |
 
-### `[[spacecraft.sensors]].recorder` — used by `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer`, `camera`
+### `[[spacecraft.sensors]].recorder` — used by `coarseSunSensor`, `starTracker`, `imuSensor`, `magnetometer`, `gpsReceiver`, `camera`
 Recorder settings for a single message stream.
 
 | field | type | default | required | description |
@@ -292,6 +307,7 @@ Thruster set: type = "thrusters".
 | `params` | table | `{}` |  |  |
 | `type` | str | `'thrusters'` |  |  |
 | `thrusters` | array[table] |  |  |  |
+| `fuel_tank` | `FuelTankConfig` / `null` | `None` |  |  |
 
 ### `[[spacecraft.effectors.thrusters]]`
 A single thruster device.
@@ -304,6 +320,15 @@ A single thruster device.
 | `position_B` | array[float] | `[0.0, 0.0, 0.0]` |  |  |
 | `max_thrust` | float / `null` | `None` |  | Peak force [N] |
 | `model` | str | `'Blank_Thruster'` |  |  |
+
+### `[spacecraft.effectors.fuel_tank]`
+Optional propellant tank feeding the thruster set.
+
+| field | type | default | required | description |
+| --- | --- | --- | --- | --- |
+| `fuel_mass` | float |  | ✅ | Propellant load [kg] |
+| `radius_m` | float | `0.1` |  | Tank radius [m] |
+| `position_B` | array[float] | `[0.0, 0.0, 0.0]` |  |  |
 
 ### `[[spacecraft.effectors]]` — `mtb`
 Magnetic torque-bar set: type = "mtb".
@@ -593,6 +618,35 @@ One RF antenna end of a link (simpleAntenna.SimpleAntenna).
 | `broadcast_stream` | bool | `False` |  |  |
 | `save_file` | str / `null` | `None` |  |  |
 | `no_display` | bool | `False` |  |  |
+
+## `[[camera]]`
+[[camera]]: an instrument whose image Vizard renders, not computes.
+
+| field | type | default | required | description |
+| --- | --- | --- | --- | --- |
+| `parent` | str |  | ✅ |  |
+| `camera_id` | int | `1` |  |  |
+| `render_rate` | float | `2.0` |  | Seconds per rendered frame |
+| `sigma_CB` | array[table] | `[0.0, 0.0, 0.0]` |  |  |
+| `camera_pos_B` | array[table] | `[0.0, 0.0, 0.0]` |  |  |
+| `resolution` | array[table] | `[512, 512]` |  |  |
+| `field_of_view` | float | `0.8726646259971648` |  |  |
+| `sky_box` | str | `'black'` |  |  |
+| `save_images` | bool | `False` |  |  |
+| `save_dir` | str / `null` | `None` |  |  |
+| `record_rate` | int | `0` |  | Store every Nth captured frame; 0 stores nothing |
+| `record_mode` | ``cadence` / `snap`` | `'cadence'` |  | Outlet door: every Nth capture ('cadence') or pulse deliveries only ('snap') |
+| `downlink` | bool | `False` |  |  |
+
+## `[[store]]`
+[[store]]: one payload's recorder on one vehicle.
+
+| field | type | default | required | description |
+| --- | --- | --- | --- | --- |
+| `parent` | str |  | ✅ |  |
+| `payload` | str | `'cam'` |  |  |
+| `capacity_bytes` | int |  | ✅ | Recorder capacity [bytes]; 0 stores nothing |
+| `capacity_files` | int |  | ✅ | Files the store holds before the oldest makes room |
 
 ## `[custom]`
 [custom]: direct Basilisk graph primitives.

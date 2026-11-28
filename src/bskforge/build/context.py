@@ -52,6 +52,8 @@ class ThrusterBundle:
     factory: Any
     cfg_msg: Any
     cmd_src_msg: Any = None  # message driving ``effector.cmdsInMsg``
+    tank: Any = None  # FuelTank effector when the set declares a tank
+    tank_model: Any = None  # the tank's mass model, kept referenced alive
 
 
 @dataclass

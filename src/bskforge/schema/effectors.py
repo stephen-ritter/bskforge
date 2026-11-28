@@ -88,15 +88,40 @@ class ThrusterDevice(PassthroughModel):
     model: str = "Blank_Thruster"
 
 
+class FuelTankConfig(ScenarioModel):
+    """Optional propellant tank feeding the thruster set.
+
+    A declared tank is plant hardware with two jobs: it drains natively as
+    the set fires (Basilisk's ``FuelTank`` effector, coupled through
+    ``addThrusterSet``), and it makes the set's total authority finite.
+    Without a tank the set fires on constant mass forever, which is a fine
+    idealization until someone budgets a burn.
+
+    Attributes:
+        fuel_mass: Propellant load at simulation start [kg].
+        radius_m: Tank radius for the constant-volume model [m]; the model
+            keeps the load centered in the tank, so only mass (not CoM
+            migration) enters the plant.
+        position_B: Tank center in the body frame [m].
+    """
+
+    fuel_mass: float = Field(gt=0, description="Propellant load [kg]")
+    radius_m: float = Field(0.1, gt=0, description="Tank radius [m]")
+    position_B: Vec3 = [0.0, 0.0, 0.0]
+
+
 class ThrustersConfig(PassthroughModel):
     """Thruster set: ``type = "thrusters"``.
 
     Attributes:
         thrusters: Individual thruster devices of this set.
+        fuel_tank: Optional propellant tank; omitted means the set never
+            runs dry (constant-mass idealization, unchanged behavior).
     """
 
     type: Literal["thrusters"] = "thrusters"
     thrusters: list[ThrusterDevice] = Field(default_factory=list)
+    fuel_tank: FuelTankConfig | None = None
 
     @model_validator(mode="after")
     def _require_thrusters(self) -> ThrustersConfig:

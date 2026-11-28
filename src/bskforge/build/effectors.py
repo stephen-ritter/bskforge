@@ -16,6 +16,7 @@ from typing import Any
 from Basilisk.architecture import messaging
 from Basilisk.simulation import (
     MtbEffector,
+    fuelTank,
     reactionWheelStateEffector,
     thrusterDynamicEffector,
 )
@@ -138,10 +139,36 @@ def build_thrusters(
     factory.addToSpacecraft(f"{bundle.config.name}_thrEff", effector, bundle.sc)
     ctx.add_dyn(effector)
     ctx.register_tag(f"{bundle.config.name}_thrEff", effector)
+
+    tank = None
+    tank_model = None
+    if cfg.fuel_tank is not None:
+        # Basilisk's tank is a state effector in its own right: it drains
+        # natively from the set's commanded thrust (addThrusterSet) and
+        # reports fuelMass on its output message. Note what it does NOT do:
+        # gate the force. Measured on bsk 2.12, a set with an empty tank
+        # keeps producing thrust tick after tick - the tank is an honest
+        # accountant, not a door. Whoever wants a dry tank to stop the burn
+        # must read this tank and withhold the command; the plant merely
+        # keeps the books.
+        tank = fuelTank.FuelTank()
+        tank_model = fuelTank.FuelTankModelConstantVolume()
+        tank_model.propMassInit = cfg.fuel_tank.fuel_mass
+        tank_model.maxFuelMass = cfg.fuel_tank.fuel_mass
+        tank_model.radiusTankInit = cfg.fuel_tank.radius_m
+        tank_model.r_TcT_TInit = [[float(c)] for c in cfg.fuel_tank.position_B]
+        tank.setTankModel(tank_model)
+        tank.addThrusterSet(effector)
+        bundle.sc.addStateEffector(tank)
+        ctx.add_dyn(tank)
+        ctx.register_tag(f"{bundle.config.name}_tank", tank)
+
     bundle.thruster = ThrusterBundle(
         effector=effector,
         factory=factory,
         cfg_msg=factory.getConfigMessage(),
+        tank=tank,
+        tank_model=tank_model,
     )
 
 

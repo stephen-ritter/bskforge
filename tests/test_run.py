@@ -1701,3 +1701,60 @@ class TestVisualization:
         assert any(type(m).__name__ == "ClockSynch" for m in models), (
             "live stream missing clock sync"
         )
+
+
+class TestFuelTank:
+    """A declared tank drains natively as the set fires (bsk 2.12)."""
+
+    @staticmethod
+    def _config(fuel_mass: float | None) -> dict:
+        effector: dict = {"type": "thrusters", "thrusters": _thruster_set(20.0)}
+        if fuel_mass is not None:
+            effector["fuel_tank"] = {"fuel_mass": fuel_mass, "radius_m": 0.15}
+        return {
+            "simulation": {
+                "name": "tank",
+                "duration": 200.0,
+                "dt": {"dynamics": 0.1, "fsw": 1.0},
+            },
+            "spacecraft": [
+                {
+                    "name": "sc1",
+                    "hub": ATT_HUB,
+                    "orbit": {"type": "elements", "elements": {"a": 7000e3}},
+                    "attitude": {"initial": {"sigma_BN": [0.2, -0.1, 0.15]}},
+                    "effectors": [effector],
+                    "fsw": {
+                        "guidance": {"type": "inertial3D", "sigma_R0N": [0, 0, 0]},
+                        "control": {"type": "mrpFeedback", "k": 30.0, "p": 40.0},
+                        "allocation": {"type": "thrusterTorque", "min_fire_time": 0.05},
+                    },
+                }
+            ],
+        }
+
+    def test_tank_drains_as_the_set_fires(self):
+        result = ScenarioRunner(validate_scenario(self._config(0.05))).run(
+            duration=200.0
+        )
+        fuel = result.frames["sc1.fuel"]
+        col = next(c for c in fuel.columns if c.startswith("fuelMass"))
+        series = fuel[col].to_numpy(dtype=float)
+        # The first recorded sample predates the tank's first message write
+        # (recorder quirk: an unwritten message reads zero), so the full load
+        # is proven by its maximum, not by row zero. These 8x20 N devices
+        # out-burn 0.05 kg within the window, so the honest end state is dry.
+        assert series.max() == pytest.approx(0.05, rel=1e-3), (
+            "the tank never reported its full load"
+        )
+        assert series[-1] == pytest.approx(0.0, abs=1e-9), (
+            "declared tank still holds propellant after the set out-burned it"
+        )
+
+    def test_no_tank_leaves_the_plant_unchanged(self):
+        result = ScenarioRunner(validate_scenario(self._config(None))).run(
+            duration=60.0
+        )
+        assert "sc1.fuel" not in result.frames, (
+            "fuel channel appeared without a declared tank"
+        )

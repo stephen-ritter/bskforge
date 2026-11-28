@@ -72,6 +72,15 @@ def build_recorders(ctx: SimContext) -> None:
                 RecorderConfig(),
             )
 
+        if bundle.thruster is not None and bundle.thruster.tank is not None:
+            _record(
+                ctx,
+                bundle,
+                f"{name}.fuel",
+                bundle.thruster.tank.fuelTankOutMsg,
+                RecorderConfig(),
+            )
+
         if bundle.mtb is not None and bundle.mtb.cmd_src_msg is not None:
             _record(
                 ctx,
